@@ -21,12 +21,15 @@ PASSWORD_VARS = {
 }
 
 
-def _password(role: str) -> str:
-    name = PASSWORD_VARS[role]
+def _require_env(name: str) -> str:
     value = os.environ.get(name)
     if not value:
         pytest.exit(f"{name} is not set. Run: uv run --env-file .env pytest", 2)
     return value
+
+
+def _password(role: str) -> str:
+    return _require_env(PASSWORD_VARS[role])
 
 
 @pytest.fixture(scope="session")
@@ -67,6 +70,11 @@ def migrated_db(pg_url: Callable[[str], str]) -> None:
     )
     command.downgrade(cfg, "base")
     command.upgrade(cfg, "head")
+
+
+@pytest.fixture(scope="session")
+def mongo_url() -> str:
+    return _require_env("MONGO_URL")
 
 
 @pytest.fixture
