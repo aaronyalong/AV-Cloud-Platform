@@ -4,8 +4,12 @@ members = ["avdata", "api"]
 [tool.ruff]
 target-version = "py313"
 
+[tool.ruff.lint.isort]
+known-first-party = ["avdata", "app"]
+
 [dependency-groups]
 dev = [
+    "anyio>=4.16.0",
     "httpx>=0.28.1",
     "pytest>=9.2.0",
     "ruff>=0.17.4",
@@ -13,3 +17,6 @@ dev = [
 
 [tool.alembic]
 script_location = "%(here)s/avdata/migrations"
+
+[tool.pytest.ini_options]
+testpaths = ["avdata/tests"]
