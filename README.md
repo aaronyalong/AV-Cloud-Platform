@@ -35,11 +35,13 @@ React dashboard ──HTTPS──► ALB ──► FastAPI (ECS Fargate) ──�
 |---|---|---|
 | `edge/` | CARLA edge agent | Jose |
 | `api/` | FastAPI service | Aaron |
+| `avdata/` | Shared data-access package, database migrations, and Mongo indexes | Aaron |
 | `workers/` | Queue consumers: ingestion, detection, alerts | Aaron / Ralph |
 | `web/` | React dashboard | Ralph |
 | `infra/` | Terraform | Pradeep |
+| `db/init/` | One-time Postgres setup for local Docker | Aaron |
 
-These folders are created as each part is started.
+Folders that don't exist yet are created as each part is started.
 
 ## Tech stack
 
@@ -55,7 +57,40 @@ These folders are created as each part is started.
 
 ## Status
 
-Early setup. We're building locally first, with Postgres and MongoDB in Docker Compose. AWS comes after permissions and budget are confirmed. Setup instructions will go here once the local environment is in place.
+Everything runs locally for now. AWS comes after permissions and budget are confirmed.
+
+Done so far:
+- **Postgres schema:** tenants, vehicles, IoT devices and vehicle commands, with row-level security per tenant.
+- **MongoDB indexes:** for telemetry and events.
+- **API:** a FastAPI app with health checks.
+
+## Local development
+
+You need [Docker](https://docs.docker.com/engine/install/) with Compose, and [uv](https://docs.astral.sh/uv/getting-started/installation/). uv installs the right Python version (3.13) by itself.
+
+From the repo root:
+
+```bash
+cp .env.example .env                                  # local-only passwords and URLs
+docker compose up -d --wait                           # Postgres 16 and MongoDB 7
+uv sync                                               # Python dependencies
+uv run --env-file .env alembic upgrade head           # Postgres tables and security policies
+uv run --env-file .env python -m avdata.mongo         # MongoDB indexes
+uv run --env-file .env pytest                         # all tests should pass
+uv run --env-file .env uvicorn app.main:app --reload  # API on http://localhost:8000
+```
+
+Then check http://localhost:8000/health/ready. It should say `ok` for both databases. Interactive API docs are at http://localhost:8000/docs.
+
+Every Python command takes `--env-file .env`, because that's where the database URLs come from.
+
+### Things to know
+
+- **The app can't bypass tenant isolation.** The API connects to Postgres as `av_app`. Row-level security means that role only sees rows for the tenant set on the current transaction, and it sees nothing if no tenant is set. Set the tenant with `avdata.postgres.tenant_transaction`. Never connect the app as the `postgres` superuser, because superusers skip row-level security.
+- **Schema changes are migrations.** Add a file under `avdata/migrations/versions/` and run `alembic upgrade head`. Every new table with a `tenant_id` column needs row-level security; a test fails if it's missing.
+- **Tests use separate databases.** They use `av_test` in both Postgres and Mongo, and rebuild it on every run, so they never touch your dev data.
+- **Resetting:** `docker compose down -v` deletes all local data. You need it after changing passwords in `.env`, because the database roles are only created when the Postgres volume is first set up. Then run the setup commands again.
+- **Port conflicts:** if 5432 or 27017 is already taken, change `POSTGRES_PORT` or `MONGO_PORT` in `.env`, and update the matching URLs in the same file.
 
 ## Design documents
 
