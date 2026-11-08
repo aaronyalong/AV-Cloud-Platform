@@ -1,0 +1,15 @@
+[project]
+name = "avdata"
+version = "0.1.0"
+description = "Tenant-scoped data access for PostgreSQL and MongoDB"
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.20.1",
+    "psycopg[binary]>=3.3.8",
+    "pymongo>=4.19.0",
+    "sqlalchemy[asyncio]>=2.1.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"
