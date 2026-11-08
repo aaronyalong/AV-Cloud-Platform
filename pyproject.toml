@@ -10,7 +10,7 @@ known-first-party = ["avdata", "app"]
 [dependency-groups]
 dev = [
     "anyio>=4.16.0",
-    "httpx>=0.28.1",
+    "httpx2>=2.16.0",
     "pytest>=9.2.0",
     "ruff>=0.17.4",
 ]
@@ -19,4 +19,4 @@ dev = [
 script_location = "%(here)s/avdata/migrations"
 
 [tool.pytest.ini_options]
-testpaths = ["avdata/tests"]
+testpaths = ["avdata/tests", "api/tests"]
