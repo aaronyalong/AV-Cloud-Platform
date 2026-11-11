@@ -85,7 +85,7 @@ async def get_telemetry(
 ) -> dict:
     selected = _parse_fields(fields)
     start, end = _window(start, end, DEFAULT_WINDOW)
-    await _require_vehicle(request, tenant_id, vehicle_id)
+    await require_vehicle(request, tenant_id, vehicle_id)
 
     docs = TenantDocuments(request.app.state.mongo_db, tenant_id)
     samples = await docs.telemetry_samples(vehicle_id, start, end, run_id)
@@ -117,7 +117,7 @@ async def get_events(
     """Events such as collisions, newest first. Defaults to the last 24 hours."""
     start, end = _window(start, end, MAX_WINDOW)
     if vehicle_id:
-        await _require_vehicle(request, tenant_id, vehicle_id)
+        await require_vehicle(request, tenant_id, vehicle_id)
     docs = TenantDocuments(request.app.state.mongo_db, tenant_id)
     events = await docs.events(start, end, vehicle_id, run_id, limit)
     return {"from": start, "to": end, "events": events}
@@ -133,7 +133,7 @@ def _window(
     return start, end
 
 
-async def _require_vehicle(request: Request, tenant_id: str, vehicle_id: str) -> None:
+async def require_vehicle(request: Request, tenant_id: str, vehicle_id: str) -> None:
     """404 unless the vehicle exists for this tenant. Postgres RLS decides, so
     another tenant's vehicle looks exactly like one that doesn't exist."""
     async with tenant_transaction(request.app.state.engine, tenant_id) as conn:

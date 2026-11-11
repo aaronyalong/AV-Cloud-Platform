@@ -63,7 +63,7 @@ Everything runs locally for now. AWS comes after permissions and budget are conf
 The Data and IoT Management component works end to end on one machine:
 - **Simulator:** 4 simulated vehicles (`t-acme`: veh-07, veh-09, veh-12; `t-beta`: veh-01) send telemetry at 2 Hz, a heartbeat every 10 s, and a scripted collision event every 45 s.
 - **Ingest worker:** stores each message exactly once. Telemetry goes to MongoDB in per-minute buckets, events to the MongoDB `events` collection, and heartbeats to Postgres.
-- **API:** `GET /api/v1/vehicles` returns each vehicle's connectivity status; `GET /api/v1/telemetry` and `GET /api/v1/events` return its data. `POST /internal/v1/vehicles/{id}/commands` sends a pull-over or slow-down command. All are scoped to the caller's tenant by Postgres row-level security and a tenant-scoped MongoDB wrapper.
+- **API:** `GET /api/v1/vehicles` returns each vehicle's connectivity status; `GET /api/v1/telemetry` and `GET /api/v1/events` return its data. `POST /internal/v1/vehicles/{id}/commands` sends a pull-over or slow-down command, and `GET /api/v1/media/download-url` gives a 5-minute signed link to a media file. All are scoped to the caller's tenant by Postgres row-level security and a tenant-scoped MongoDB wrapper.
 - **Dashboard:** a page at `/` with a tenant picker, a vehicle table with live status, a speed chart, recent events, and a **Send pull-over** button.
 
 ## Running the demo
@@ -82,6 +82,7 @@ Things to show:
 |---|---|
 | Live status, speed chart, events | Click a vehicle row. The page refreshes every 2 seconds. veh-07 reports its first collision after about 8 s. |
 | Vehicle command | Select a vehicle and click **Send pull-over**. The command shows **Sent**, then **Acked** about 2 s later, and the speed chart drops to 0 for 25 s. A vehicle that is Offline or Never connected gets a 409 and nothing is sent. |
+| Media link | `curl -H "X-Tenant-Id: t-acme" "localhost:8000/api/v1/media/download-url?key=t-acme/run-demo/veh-07/camera/frame-0001.svg"`, then open `localhost:8000` + the returned `url`. As `t-beta`, the same key returns 404; an edited link returns 403. |
 | Tenant isolation | Switch the tenant picker to `t-beta`: only veh-01 is visible. `curl -H "X-Tenant-Id: t-beta" "localhost:8000/api/v1/telemetry?vehicle_id=veh-07"` returns 404. |
 | Lost connection | `make demo ARGS="--stop veh-09"`. veh-09 stops sending after 20 s, shows **Stale** 30 s later, and **Offline** after 90 s. |
 | Duplicates stored once | `make demo ARGS="--replay-duplicates 20"`. After 15 s the simulator resends its last 20 messages; the worker's log shows `'duplicate': 20` and nothing extra is stored. |
@@ -96,7 +97,7 @@ Connectivity rules: **Online** ≤30 s since the last heartbeat, **Stale** 30–
 Skipped for the local demo, on purpose:
 - **Real auth:** the tenant comes from an `X-Tenant-Id` header. Planned: Cognito, with the tenant and role read from the verified token.
 - **AWS IoT Core and SQS:** the simulator and worker share an in-process queue behind a `MessageQueue` interface. Planned: MQTT to IoT Core, with an IoT rule that forwards to SQS and a dead-letter queue for failed messages.
-- **S3 media and presigned URLs.**
+- **S3:** media links are signed and served locally from `media/` (keys `tenant/run/vehicle/type/file`) by a `MediaStore` stand-in. Planned: S3 presigned URLs behind the same interface.
 - **Command delivery and expiry:** commands reach the simulator through a local poller that stands in for IoT Core publishing to the vehicle's topic. Unanswered commands stay **Sent**; marking them **Expired** is planned.
 - **Internal API protection:** `/internal/v1` is called by the dashboard here, standing in for the alert component. Planned: reachable only from inside the VPC.
 - **Deployment:** ECS Fargate, RDS, and DocumentDB, via Terraform.

@@ -9,6 +9,7 @@ tenant's transaction.
 
 import asyncio
 import os
+from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -65,6 +66,31 @@ async def seed_demo_fleet(owner_engine: AsyncEngine) -> None:
                 )
 
 
+# One camera frame per demo vehicle, so download links have something to serve.
+SAMPLE_FRAME_KEY = "{tenant_id}/run-demo/{vehicle_id}/camera/frame-0001.svg"
+SAMPLE_FRAME_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360">
+<rect width="640" height="360" fill="#1d2330"/>
+<text x="320" y="170" fill="#e6e9ee" font-family="sans-serif" font-size="32" text-anchor="middle">{vehicle_id} camera</text>
+<text x="320" y="215" fill="#9aa4b2" font-family="sans-serif" font-size="20" text-anchor="middle">{tenant_id} · sample frame</text>
+</svg>
+"""
+
+
+def seed_demo_media(media_dir: Path) -> list[str]:
+    """Write the sample frames (local stand-in for S3). Returns their keys."""
+    keys = []
+    for tenant_id, (_, vehicles) in DEMO_FLEET.items():
+        for vehicle_id, _ in vehicles:
+            key = SAMPLE_FRAME_KEY.format(tenant_id=tenant_id, vehicle_id=vehicle_id)
+            path = media_dir / key
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                SAMPLE_FRAME_SVG.format(tenant_id=tenant_id, vehicle_id=vehicle_id)
+            )
+            keys.append(key)
+    return keys
+
+
 async def main() -> None:
     url = os.environ.get("OWNER_DATABASE_URL")
     if not url:
@@ -76,6 +102,8 @@ async def main() -> None:
         await engine.dispose()
     for tenant_id, (_, vehicles) in DEMO_FLEET.items():
         print(f"{tenant_id}: {', '.join(v for v, _ in vehicles)}")
+    keys = seed_demo_media(Path(os.environ.get("MEDIA_DIR", "media")))
+    print(f"media: {len(keys)} sample frames, e.g. {keys[0]}")
 
 
 if __name__ == "__main__":
