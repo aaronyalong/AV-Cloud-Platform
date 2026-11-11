@@ -68,6 +68,17 @@
   .sev { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
   .sev.high { background: var(--offline-bg); color: var(--offline-fg); }
   .sev.medium, .sev.low { background: var(--stale-bg); color: var(--stale-fg); }
+  .commands-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  button { font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .6; cursor: progress; }
+  button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  #command-note { font-size: 14px; }
+  #command-note.warn { color: var(--offline-fg); }
+  .chip.SENT { background: var(--stale-bg); color: var(--stale-fg); }
+  .chip.ACKED { background: var(--online-bg); color: var(--online-fg); }
+  .chip.REJECTED { background: var(--offline-bg); color: var(--offline-fg); }
+  .chip.EXPIRED { background: var(--never-bg); color: var(--never-fg); }
   footer { padding: 0 24px 20px; font-size: 12px; color: var(--muted); }
 </style>
 </head>
@@ -106,6 +117,12 @@
       </div>
       <div class="chart-wrap"><canvas id="chart" aria-label="Speed over the last 2 minutes" role="img"></canvas></div>
       <div class="legend" id="chart-note">Speed (km/h), last 2 minutes</div>
+      <h3>Commands</h3>
+      <div class="commands-bar">
+        <button type="button" id="pull-over">Send pull-over</button>
+        <span id="command-note" class="muted" role="status"></span>
+      </div>
+      <ul class="events" id="commands"></ul>
       <h3>Recent events</h3>
       <ul class="events" id="events"><li class="muted">No events in the last 24 hours.</li></ul>
     </div>
@@ -117,6 +134,13 @@
 <script>
 const REFRESH_MS = 2000;
 const WINDOW_MS = 2 * 60 * 1000;
+const GAP_MS = 3000;
+const COMMAND_STATUS = {
+  SENT: ["◐", "Sent"],
+  ACKED: ["✓", "Acked"],
+  REJECTED: ["✕", "Rejected"],
+  EXPIRED: ["–", "Expired"],
+};
 const STATUS = {
   ONLINE: ["●", "Online"],
   STALE: ["◐", "Stale"],
@@ -129,7 +153,7 @@ const $ = (id) => document.getElementById(id);
 // Deep link: /?tenant=t-acme&vehicle=veh-07
 const params = new URLSearchParams(location.search);
 if ([...$("tenant").options].some((o) => o.value === params.get("tenant"))) $("tenant").value = params.get("tenant");
-const state = { tenant: $("tenant").value, selected: params.get("vehicle"), points: [] };
+const state = { tenant: $("tenant").value, selected: params.get("vehicle"), points: [], awaitingAck: null };
 
 async function api(path) {
   const res = await fetch(path, { headers: { "X-Tenant-Id": state.tenant } });
@@ -145,8 +169,8 @@ function ago(iso, asOf) {
   return `${Math.floor(s / 3600)} h ago`;
 }
 
-function chip(status) {
-  const [symbol, label] = STATUS[status] || ["?", status];
+function chip(status, labels = STATUS) {
+  const [symbol, label] = labels[status] || ["?", status];
   const span = document.createElement("span");
   span.className = `chip ${status}`;
   span.textContent = `${symbol} ${label}`;
@@ -183,6 +207,9 @@ function renderVehicles(vehicles, asOf) {
 
 function select(vehicleId, name) {
   state.selected = vehicleId;
+  state.awaitingAck = null;
+  $("command-note").textContent = "";
+  $("commands").replaceChildren();
   state.points = [];
   $("detail-title").textContent = `${vehicleId} · ${name}`;
   $("detail").hidden = false;
@@ -192,6 +219,8 @@ function select(vehicleId, name) {
 
 function clearSelection() {
   state.selected = null;
+  state.awaitingAck = null;
+  $("command-note").textContent = "";
   state.points = [];
   $("detail-title").textContent = "Select a vehicle";
   $("detail").hidden = true;
@@ -208,6 +237,56 @@ function renderDetail(points) {
     ? `Speed (km/h), last 2 minutes · ${points.length} points`
     : "No telemetry in the last 2 minutes.";
   drawChart(points);
+}
+
+function renderCommands(commands) {
+  const list = $("commands");
+  list.replaceChildren();
+  const awaited = commands.find((c) => c.command_id === state.awaitingAck);
+  if (awaited && awaited.status !== "SENT") {
+    $("command-note").textContent = `Vehicle answered: ${COMMAND_STATUS[awaited.status][1].toLowerCase()}.`;
+    state.awaitingAck = null;
+  }
+  for (const c of commands) {
+    const li = document.createElement("li");
+    const when = document.createElement("span");
+    when.className = "when";
+    when.textContent = new Date(c.sent_at).toLocaleTimeString();
+    const what = document.createElement("span");
+    what.textContent = c.acked_at
+      ? `${c.command} · acked after ${((new Date(c.acked_at) - new Date(c.sent_at)) / 1000).toFixed(1)} s`
+      : c.command;
+    li.append(when, chip(c.status, COMMAND_STATUS), what);
+    list.append(li);
+  }
+}
+
+async function sendPullOver() {
+  const button = $("pull-over"), note = $("command-note");
+  button.disabled = true;
+  note.className = "muted";
+  note.textContent = "Sending…";
+  try {
+    const res = await fetch(`/internal/v1/vehicles/${encodeURIComponent(state.selected)}/commands`, {
+      method: "POST",
+      headers: { "X-Tenant-Id": state.tenant, "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "PULL_OVER" }),
+    });
+    const body = await res.json();
+    if (res.status === 202) {
+      state.awaitingAck = body.command_id;
+      note.textContent = "Pull-over sent. Waiting for the vehicle to ack…";
+    } else {
+      note.className = "warn";
+      note.textContent = res.status === 409 ? `Not sent: ${body.detail}.` : `Failed: ${body.detail || res.status}`;
+    }
+  } catch (err) {
+    note.className = "warn";
+    note.textContent = `Failed: ${err.message}`;
+  } finally {
+    button.disabled = false;
+    refresh();
+  }
 }
 
 function renderEvents(events) {
@@ -265,10 +344,14 @@ function drawChart(points) {
   if (points.length < 2) return;
   ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.lineJoin = "round";
   ctx.beginPath();
-  points.forEach((p, i) => {
-    const px = x(new Date(p.ts).getTime()), py = y(p.speed_kmh);
-    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
-  });
+  let previous = null;
+  for (const p of points) {
+    const t = new Date(p.ts).getTime();
+    // Samples arrive every 0.5 s; a longer gap means no data, so break the line.
+    const gap = previous === null || t - previous > GAP_MS;
+    gap ? ctx.moveTo(x(t), y(p.speed_kmh)) : ctx.lineTo(x(t), y(p.speed_kmh));
+    previous = t;
+  }
   ctx.stroke();
 }
 
@@ -291,6 +374,8 @@ async function refresh() {
       renderDetail(points);
       const events = await api(`/api/v1/events?${new URLSearchParams({ vehicle_id: state.selected, limit: "5" })}`);
       renderEvents(events.events);
+      const commands = await api(`/internal/v1/vehicles/${encodeURIComponent(state.selected)}/commands?limit=3`);
+      renderCommands(commands.commands);
     }
     $("error").hidden = true;
     $("refreshed").textContent = `Updated ${new Date().toLocaleTimeString()}`;
@@ -300,6 +385,7 @@ async function refresh() {
   }
 }
 
+$("pull-over").addEventListener("click", sendPullOver);
 $("tenant").addEventListener("change", (e) => {
   state.tenant = e.target.value;
   clearSelection();
