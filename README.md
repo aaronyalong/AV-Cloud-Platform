@@ -40,6 +40,7 @@ React dashboard ──HTTPS──► ALB ──► FastAPI (ECS Fargate) ──�
 | `web/` | React dashboard | Ralph |
 | `infra/` | Terraform | Pradeep |
 | `db/init/` | One-time Postgres setup for local Docker | Aaron |
+| `scripts/` | `demo.sh`, which starts the whole local demo | Aaron |
 
 Folders that don't exist yet are created as each part is started.
 
@@ -59,10 +60,43 @@ Folders that don't exist yet are created as each part is started.
 
 Everything runs locally for now. AWS comes after permissions and budget are confirmed.
 
-Done so far:
-- **Postgres schema:** tenants, vehicles, IoT devices and vehicle commands, with row-level security per tenant.
-- **MongoDB indexes:** for telemetry and events.
-- **API:** a FastAPI app with health checks.
+The Data and IoT Management component works end to end on one machine:
+- **Simulator:** 4 simulated vehicles (`t-acme`: veh-07, veh-09, veh-12; `t-beta`: veh-01) send telemetry at 2 Hz and a heartbeat every 10 s.
+- **Ingest worker:** stores each message exactly once. Telemetry goes to MongoDB in per-minute buckets; heartbeats update Postgres.
+- **API:** `GET /api/v1/vehicles` returns each vehicle's connectivity status, and `GET /api/v1/telemetry` returns its telemetry. Both are scoped to the caller's tenant by Postgres row-level security and a tenant-scoped MongoDB wrapper.
+- **Dashboard:** a page at `/` with a tenant picker, a vehicle table with live status, and a speed chart.
+
+## Running the demo
+
+Prerequisites are the same as in [Local development](#local-development).
+
+```bash
+make demo                                   # or: ./scripts/demo.sh
+```
+
+This starts the databases, applies migrations and indexes, seeds the demo tenants, then runs the API and the simulator with the ingest worker. Open **http://localhost:8000**. Ctrl-C stops the simulator and API; the vehicles send a disconnect and show **Offline**.
+
+Things to show:
+
+| Show | How |
+|---|---|
+| Live status and speed chart | Click a vehicle row. The page refreshes every 2 seconds. |
+| Tenant isolation | Switch the tenant picker to `t-beta`: only veh-01 is visible. `curl -H "X-Tenant-Id: t-beta" "localhost:8000/api/v1/telemetry?vehicle_id=veh-07"` returns 404. |
+| Lost connection | `make demo ARGS="--stop veh-09"`. veh-09 stops sending after 20 s, shows **Stale** 30 s later, and **Offline** after 90 s. |
+| Duplicates stored once | `make demo ARGS="--replay-duplicates 20"`. After 15 s the simulator resends its last 20 messages; the worker's log shows `'duplicate': 20` and nothing extra is stored. |
+| Tests | `make test` |
+
+You can link straight to a vehicle with `http://localhost:8000/?tenant=t-acme&vehicle=veh-07`.
+
+Connectivity rules: **Online** ≤30 s since the last heartbeat, **Stale** 30–90 s, **Offline** >90 s or after a disconnect, **Never connected** before the first heartbeat, **Suspended** if the tenant is suspended.
+
+## Planned (not built yet)
+
+Skipped for the local demo, on purpose:
+- **Real auth:** the tenant comes from an `X-Tenant-Id` header. Planned: Cognito, with the tenant and role read from the verified token.
+- **AWS IoT Core and SQS:** the simulator and worker share an in-process queue behind a `MessageQueue` interface. Planned: MQTT to IoT Core, with an IoT rule that forwards to SQS and a dead-letter queue for failed messages.
+- **S3 media and presigned URLs, events, and vehicle commands.**
+- **Deployment:** ECS Fargate, RDS, and DocumentDB, via Terraform.
 
 ## Local development
 

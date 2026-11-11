@@ -87,8 +87,14 @@ def test_app_roles_cannot_bypass_rls(app_conn):
 @pytest.mark.parametrize("table", TABLES)
 def test_superuser_sees_all_seeded_rows(pg_conninfo, table):
     """Positive control: zero rows below means blocked, not missing."""
+    query = sql.SQL("SELECT count(*) FROM {} WHERE tenant_id IN (%s, %s)").format(
+        sql.Identifier(table)
+    )
     with psycopg.connect(pg_conninfo("postgres")) as conn:
-        assert count(conn, table) == SEEDED[table][0]
+        # Only this module's tenants: other test files seed av_test too.
+        assert (
+            conn.execute(query, (TENANT_A, TENANT_B)).fetchone()[0] == SEEDED[table][0]
+        )
 
 
 def test_every_tenant_table_has_forced_rls_policy(app_conn):

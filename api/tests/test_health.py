@@ -53,3 +53,10 @@ def test_not_ready_when_mongo_is_down(monkeypatch):
         "status": "unavailable",
         "checks": {"postgres": "ok", "mongo": "error"},
     }
+
+
+def test_dashboard_page_is_served(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Fleet vehicles" in response.text

@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet Vehicles</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #5f6b7a; --line: #e3e6eb;
+    --accent: #2f6fde; --row-hover: #f0f4fb; --row-selected: #e4edfc;
+    --online-bg: #e3f6e8; --online-fg: #146c2e;
+    --stale-bg: #fff3d6; --stale-fg: #8a5a00;
+    --offline-bg: #fde4e2; --offline-fg: #a3261b;
+    --never-bg: #eceef1; --never-fg: #4a5361;
+    --suspended-bg: #ece6fa; --suspended-fg: #5b3aa8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1b2029; --text: #e6e9ee; --muted: #9aa4b2; --line: #2c333f;
+      --accent: #6b9cff; --row-hover: #222a36; --row-selected: #24324a;
+      --online-bg: #133a22; --online-fg: #7ee2a0;
+      --stale-bg: #3d3011; --stale-fg: #f3c96b;
+      --offline-bg: #43201d; --offline-fg: #ff9d93;
+      --never-bg: #2a2f38; --never-fg: #b4bcc8;
+      --suspended-bg: #2e2645; --suspended-fg: #c4b2ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 16px 24px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 19px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  label { font-size: 14px; color: var(--muted); }
+  select { margin-left: 6px; font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  .refresh { margin-left: auto; color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; padding: 20px 24px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 16px; } header { padding: 14px 16px; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+  h2 { margin: 0 0 12px; font-size: 16px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--row-hover); }
+  tbody tr.selected { background: var(--row-selected); }
+  tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .chip.ONLINE { background: var(--online-bg); color: var(--online-fg); }
+  .chip.STALE { background: var(--stale-bg); color: var(--stale-fg); }
+  .chip.OFFLINE { background: var(--offline-bg); color: var(--offline-fg); }
+  .chip.NEVER_CONNECTED { background: var(--never-bg); color: var(--never-fg); }
+  .chip.SUSPENDED { background: var(--suspended-bg); color: var(--suspended-fg); }
+  .muted { color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .stat .v { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .chart-wrap { position: relative; height: 240px; }
+  canvas { width: 100%; height: 100%; display: block; }
+  .error { margin: 0 24px; margin-top: 16px; padding: 10px 14px; border-radius: 8px; background: var(--offline-bg); color: var(--offline-fg); }
+  .legend { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  footer { padding: 0 24px 20px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Fleet vehicles</h1>
+    <div class="sub">AV Cloud Platform · Data and IoT Management</div>
+  </div>
+  <label>Tenant
+    <select id="tenant">
+      <option value="t-acme">t-acme · Acme Logistics</option>
+      <option value="t-beta">t-beta · Beta Mobility</option>
+    </select>
+  </label>
+  <span class="refresh" id="refreshed">Loading…</span>
+</header>
+<div class="error" id="error" hidden></div>
+<main>
+  <section>
+    <h2>Vehicles</h2>
+    <table>
+      <thead><tr><th>Vehicle</th><th>Name</th><th>Status</th><th>Last heartbeat</th></tr></thead>
+      <tbody id="vehicles"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+    </table>
+    <div class="legend">Online ≤30 s since last heartbeat · Stale 30–90 s · Offline &gt;90 s or after a disconnect</div>
+  </section>
+  <section>
+    <h2 id="detail-title">Select a vehicle</h2>
+    <div id="detail" hidden>
+      <div class="stats">
+        <div class="stat"><div class="k">Speed</div><div class="v" id="s-speed">–</div></div>
+        <div class="stat"><div class="k">Heading</div><div class="v" id="s-heading">–</div></div>
+        <div class="stat"><div class="k">Throttle</div><div class="v" id="s-throttle">–</div></div>
+        <div class="stat"><div class="k">Brake</div><div class="v" id="s-brake">–</div></div>
+      </div>
+      <div class="chart-wrap"><canvas id="chart" aria-label="Speed over the last 2 minutes" role="img"></canvas></div>
+      <div class="legend" id="chart-note">Speed (km/h), last 2 minutes</div>
+    </div>
+    <p class="muted" id="detail-empty">Click a row to see live telemetry.</p>
+  </section>
+</main>
+<footer>Local auth stub: the tenant is sent as the X-Tenant-Id header. Refreshes every 2 seconds.</footer>
+
+<script>
+const REFRESH_MS = 2000;
+const WINDOW_MS = 2 * 60 * 1000;
+const STATUS = {
+  ONLINE: ["●", "Online"],
+  STALE: ["◐", "Stale"],
+  OFFLINE: ["○", "Offline"],
+  NEVER_CONNECTED: ["–", "Never connected"],
+  SUSPENDED: ["⏸", "Suspended"],
+};
+
+const $ = (id) => document.getElementById(id);
+// Deep link: /?tenant=t-acme&vehicle=veh-07
+const params = new URLSearchParams(location.search);
+if ([...$("tenant").options].some((o) => o.value === params.get("tenant"))) $("tenant").value = params.get("tenant");
+const state = { tenant: $("tenant").value, selected: params.get("vehicle"), points: [] };
+
+async function api(path) {
+  const res = await fetch(path, { headers: { "X-Tenant-Id": state.tenant } });
+  if (!res.ok) throw new Error(`${path.split("?")[0]} returned ${res.status}`);
+  return res.json();
+}
+
+function ago(iso, asOf) {
+  if (!iso) return "never";
+  const s = Math.max(0, Math.round((new Date(asOf) - new Date(iso)) / 1000));
+  if (s < 60) return `${s} s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  return `${Math.floor(s / 3600)} h ago`;
+}
+
+function chip(status) {
+  const [symbol, label] = STATUS[status] || ["?", status];
+  const span = document.createElement("span");
+  span.className = `chip ${status}`;
+  span.textContent = `${symbol} ${label}`;
+  return span;
+}
+
+function cell(text, cls) {
+  const td = document.createElement("td");
+  td.textContent = text;
+  if (cls) td.className = cls;
+  return td;
+}
+
+function renderVehicles(vehicles, asOf) {
+  const body = $("vehicles");
+  body.replaceChildren();
+  if (!vehicles.length) {
+    body.append(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="4" class="muted">No vehicles for this tenant.</td>' }));
+    return;
+  }
+  for (const v of vehicles) {
+    const tr = document.createElement("tr");
+    tr.tabIndex = 0;
+    if (v.vehicle_id === state.selected) tr.className = "selected";
+    const status = document.createElement("td");
+    status.append(chip(v.status));
+    tr.append(cell(v.vehicle_id, "mono"), cell(v.name), status, cell(ago(v.last_heartbeat_at, asOf), "muted"));
+    const pick = () => select(v.vehicle_id, v.name);
+    tr.addEventListener("click", pick);
+    tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+    body.append(tr);
+  }
+}
+
+function select(vehicleId, name) {
+  state.selected = vehicleId;
+  state.points = [];
+  $("detail-title").textContent = `${vehicleId} · ${name}`;
+  $("detail").hidden = false;
+  $("detail-empty").hidden = true;
+  refresh();
+}
+
+function clearSelection() {
+  state.selected = null;
+  state.points = [];
+  $("detail-title").textContent = "Select a vehicle";
+  $("detail").hidden = true;
+  $("detail-empty").hidden = false;
+}
+
+function renderDetail(points) {
+  const last = points[points.length - 1];
+  $("s-speed").textContent = last ? `${last.speed_kmh.toFixed(1)} km/h` : "–";
+  $("s-heading").textContent = last ? `${Math.round(last.heading_deg)}°` : "–";
+  $("s-throttle").textContent = last ? `${Math.round(last.throttle * 100)}%` : "–";
+  $("s-brake").textContent = last ? `${Math.round(last.brake * 100)}%` : "–";
+  $("chart-note").textContent = points.length
+    ? `Speed (km/h), last 2 minutes · ${points.length} points`
+    : "No telemetry in the last 2 minutes.";
+  drawChart(points);
+}
+
+function drawChart(points) {
+  const canvas = $("chart");
+  const ratio = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * ratio; canvas.height = h * ratio;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(ratio, ratio);
+  ctx.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  const muted = css.getPropertyValue("--muted"), line = css.getPropertyValue("--line"), accent = css.getPropertyValue("--accent");
+  const pad = { l: 40, r: 10, t: 10, b: 24 };
+  const now = Date.now(), t0 = now - WINDOW_MS;
+  const maxY = Math.max(60, ...points.map((p) => p.speed_kmh));
+  const yMax = Math.ceil(maxY / 20) * 20;
+  const x = (t) => pad.l + ((t - t0) / WINDOW_MS) * (w - pad.l - pad.r);
+  const y = (v) => pad.t + (1 - v / yMax) * (h - pad.t - pad.b);
+
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.fillStyle = muted; ctx.strokeStyle = line; ctx.lineWidth = 1;
+  for (let v = 0; v <= yMax; v += 20) {
+    ctx.beginPath(); ctx.moveTo(pad.l, y(v)); ctx.lineTo(w - pad.r, y(v)); ctx.stroke();
+    ctx.textAlign = "right"; ctx.fillText(String(v), pad.l - 6, y(v) + 4);
+  }
+  ctx.textAlign = "center";
+  for (const s of [120, 90, 60, 30, 0]) {
+    ctx.fillText(s ? `-${s}s` : "now", x(now - s * 1000), h - 6);
+  }
+  if (points.length < 2) return;
+  ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.lineJoin = "round";
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const px = x(new Date(p.ts).getTime()), py = y(p.speed_kmh);
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  });
+  ctx.stroke();
+}
+
+async function refresh() {
+  try {
+    const { vehicles, as_of: asOf } = await api("/api/v1/vehicles");
+    const current = vehicles.find((v) => v.vehicle_id === state.selected);
+    if (state.selected && !current) clearSelection();
+    if (current) {
+      $("detail-title").textContent = `${current.vehicle_id} · ${current.name}`;
+      $("detail").hidden = false;
+      $("detail-empty").hidden = true;
+    }
+    renderVehicles(vehicles, asOf);
+    if (state.selected) {
+      const from = new Date(Date.now() - WINDOW_MS).toISOString();
+      const q = new URLSearchParams({ vehicle_id: state.selected, from, fields: "speed_kmh,heading_deg,throttle,brake", max_points: "240" });
+      const { points } = await api(`/api/v1/telemetry?${q}`);
+      state.points = points;
+      renderDetail(points);
+    }
+    $("error").hidden = true;
+    $("refreshed").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+  } catch (err) {
+    $("error").textContent = `Could not reach the API: ${err.message}`;
+    $("error").hidden = false;
+  }
+}
+
+$("tenant").addEventListener("change", (e) => {
+  state.tenant = e.target.value;
+  clearSelection();
+  refresh();
+});
+window.addEventListener("resize", () => state.selected && drawChart(state.points));
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>

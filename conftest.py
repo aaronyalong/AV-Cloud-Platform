@@ -1,4 +1,4 @@
-"""Shared fixtures for avdata tests, which run against the av_test database.
+"""Shared test fixtures. Tests use the av_test databases, never the dev ones.
 
 Run with: uv run --env-file .env pytest
 """
@@ -12,7 +12,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parent
 TEST_DB = "av_test"
 PASSWORD_VARS = {
     "postgres": "POSTGRES_PASSWORD",

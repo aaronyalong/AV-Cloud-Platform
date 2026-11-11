@@ -1,11 +1,11 @@
 [tool.uv.workspace]
-members = ["avdata", "api"]
+members = ["avdata", "api", "workers"]
 
 [tool.ruff]
 target-version = "py313"
 
 [tool.ruff.lint.isort]
-known-first-party = ["avdata", "app"]
+known-first-party = ["avdata", "app", "workers"]
 
 [dependency-groups]
 dev = [
@@ -19,4 +19,4 @@ dev = [
 script_location = "%(here)s/avdata/migrations"
 
 [tool.pytest.ini_options]
-testpaths = ["avdata/tests", "api/tests"]
+testpaths = ["avdata/tests", "api/tests", "workers/tests"]

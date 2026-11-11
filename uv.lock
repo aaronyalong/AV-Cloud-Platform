@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 members = [
     "api",
     "avdata",
+    "workers",
 ]
 
 [manifest.dependency-groups]
@@ -87,6 +88,7 @@ source = { editable = "avdata" }
 dependencies = [
     { name = "alembic" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pydantic" },
     { name = "pymongo" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
@@ -95,6 +97,7 @@ dependencies = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.20.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.8" },
+    { name = "pydantic", specifier = ">=2.14.3" },
     { name = "pymongo", specifier = ">=4.19.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.8" },
 ]
@@ -1137,3 +1140,14 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/69/35/cf33cba7248fcd80cfe5911ffe67aa2637f50c2bfaada123b1e9d2aeca90/websockets-17.4-cp315-cp315t-win_arm64.whl", hash = "sha256:fcac44d917672ad6257ad64b80b5168306f168a78cab5c0612e4c699caed18cf", size = 219117, upload-time = "2026-10-30T15:10:13.771Z" },
     { url = "https://files.pythonhosted.org/packages/eb/27/9db924cb0dbf22eade78d98fbae77790f9bf6bc729e6ab29aef9d68e4156/websockets-17.4-py3-none-any.whl", hash = "sha256:c6bd2c9781915592b209160d0f017d4c7c82ad53075e6b0c24d2a89299e7f9e9", size = 212900, upload-time = "2026-10-30T15:10:34.482Z" },
 ]
+
+[[package]]
+name = "workers"
+version = "0.1.0"
+source = { editable = "workers" }
+dependencies = [
+    { name = "avdata" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "avdata", editable = "avdata" }]
