@@ -156,3 +156,18 @@ async def test_invalid_messages_are_rejected(worker):
     assert await worker.handle(missing_id) == "rejected"
     assert await worker.handle(bad_data) == "rejected"
     assert worker.stats["rejected"] == 2
+
+
+async def test_duplicate_event_is_stored_once(worker):
+    event = message("event", data={"type": "collision", "severity": "high"})
+    outcomes = [await worker.handle(event) for _ in range(2)]
+    assert outcomes == ["event", "duplicate"]
+
+    docs = await worker.mongo_db["events"].find().to_list()
+    assert [d["_id"] for d in docs] == [f"t-acme:{event['msg_id']}"]
+    assert docs[0]["type"] == "collision"
+    assert docs[0]["expires_at"] == T0 + timedelta(days=365)
+
+
+async def test_event_without_type_is_rejected(worker):
+    assert await worker.handle(message("event", data={"severity": "low"})) == "rejected"

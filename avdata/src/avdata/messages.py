@@ -47,3 +47,12 @@ class TelemetryData(BaseModel):
 
 
 TELEMETRY_FIELDS = tuple(TelemetryData.model_fields)
+
+
+class EventData(BaseModel):
+    """The data of an event message, such as a collision. Extra fields are kept."""
+
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(min_length=1)
+    severity: Literal["low", "medium", "high"] = "low"

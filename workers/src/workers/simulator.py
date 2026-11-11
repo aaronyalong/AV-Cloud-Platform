@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 TELEMETRY_INTERVAL_S = 0.5
 HEARTBEAT_INTERVAL_S = 10.0
+# Each vehicle reports a scripted collision this often, staggered by vehicle.
+EVENT_INTERVAL_S = 45.0
 
 
 class SimVehicle:
@@ -28,6 +30,7 @@ class SimVehicle:
     def __init__(self, tenant_id: str, vehicle_id: str, index: int) -> None:
         self.tenant_id = tenant_id
         self.vehicle_id = vehicle_id
+        self.index = index
         self.radius_m = 40.0 + 15.0 * index
         self.base_speed = 28.0 + 6.0 * index
         self.cycle_s = 30.0 + 7.0 * index
@@ -53,6 +56,17 @@ class SimVehicle:
             "brake": round(min(1.0, max(0.0, -accel / 10)), 2),
             "steer": round(min(1.0, 2.5 / self.radius_m), 3),
         }
+
+
+def collision_event(sample: dict) -> dict:
+    """A minor scripted collision at the vehicle's current position."""
+    return {
+        "type": "collision",
+        "severity": "high" if sample["speed_kmh"] > 40 else "low",
+        "speed_kmh": sample["speed_kmh"],
+        "x": sample["x"],
+        "y": sample["y"],
+    }
 
 
 class Simulator:
@@ -98,6 +112,7 @@ class Simulator:
         loop = asyncio.get_running_loop()
         start = loop.time()
         next_heartbeat = start
+        next_event = start + 8.0 + 9.0 * vehicle.index
         while True:
             now = loop.time()
             if vehicle.vehicle_id == self.stop and now - start >= self.stop_after_s:
@@ -108,7 +123,11 @@ class Simulator:
             if now >= next_heartbeat:
                 await self.send(vehicle, "heartbeat", {})
                 next_heartbeat += HEARTBEAT_INTERVAL_S
-            await self.send(vehicle, "telemetry", vehicle.step(TELEMETRY_INTERVAL_S))
+            sample = vehicle.step(TELEMETRY_INTERVAL_S)
+            await self.send(vehicle, "telemetry", sample)
+            if now >= next_event:
+                await self.send(vehicle, "event", collision_event(sample))
+                next_event += EVENT_INTERVAL_S
             await asyncio.sleep(TELEMETRY_INTERVAL_S)
 
     async def replay(self) -> None:

@@ -12,7 +12,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from avdata.messages import Envelope, TelemetryData
+from avdata.messages import Envelope, EventData, TelemetryData
 from avdata.mongo import TenantDocuments
 from avdata.postgres import tenant_transaction
 from workers.queue import MessageQueue
@@ -62,6 +62,14 @@ class IngestWorker:
             case "disconnect":
                 await self._record_disconnect(envelope)
                 return "disconnect"
+            case "event":
+                try:
+                    EventData.model_validate(envelope.data)
+                except ValidationError:
+                    return "rejected"
+                docs = TenantDocuments(self.mongo_db, envelope.tenant_id)
+                stored = await docs.add_event(envelope)
+                return "event" if stored else "duplicate"
             case _:
                 return "ignored"
 

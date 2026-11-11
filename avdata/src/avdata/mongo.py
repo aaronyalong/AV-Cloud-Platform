@@ -18,6 +18,7 @@ TELEMETRY = "telemetry"
 EVENTS = "events"
 
 TELEMETRY_RETENTION = timedelta(days=90)
+EVENT_RETENTION = timedelta(days=365)
 
 # Mongo has no row-level security, so every query index starts with tenant_id
 # and every avdata query filters on it.
@@ -146,6 +147,53 @@ class TenantDocuments:
             samples.extend(s for s in bucket["samples"] if start <= s["ts"] <= end)
         samples.sort(key=lambda s: s["ts"])
         return samples
+
+    async def add_event(self, envelope: Envelope) -> bool:
+        """Store one event. False if msg_id was seen before (same _id)."""
+        self._own(envelope)
+        try:
+            await self._db[EVENTS].insert_one(
+                {
+                    "_id": f"{self.tenant_id}:{envelope.msg_id}",
+                    "tenant_id": self.tenant_id,
+                    "vehicle_id": envelope.vehicle_id,
+                    "run_id": envelope.run_id,
+                    "ts": envelope.ts,
+                    "type": envelope.data.get("type"),
+                    "data": envelope.data,
+                    "expires_at": envelope.ts + EVENT_RETENTION,
+                }
+            )
+        except DuplicateKeyError:
+            return False
+        return True
+
+    async def events(
+        self,
+        start: datetime,
+        end: datetime,
+        vehicle_id: str | None = None,
+        run_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Events with start <= ts <= end, newest first."""
+        query: dict = {"tenant_id": self.tenant_id, "ts": {"$gte": start, "$lte": end}}
+        if vehicle_id:
+            query["vehicle_id"] = vehicle_id
+        if run_id:
+            query["run_id"] = run_id
+        cursor = self._db[EVENTS].find(query).sort("ts", -1).limit(limit)
+        return [
+            {
+                "event_id": doc["_id"].split(":", 1)[1],
+                "vehicle_id": doc["vehicle_id"],
+                "run_id": doc["run_id"],
+                "ts": doc["ts"],
+                "type": doc["type"],
+                "data": doc["data"],
+            }
+            async for doc in cursor
+        ]
 
 
 async def main() -> None:

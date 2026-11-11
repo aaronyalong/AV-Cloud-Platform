@@ -58,6 +58,22 @@ def seeded(migrated_db, pg_url, pg_conninfo, mongo_url, recent):
                     data={**SAMPLE, "speed_kmh": float(i)},
                 )
             )
+        for tenant, vehicle, seconds in [
+            ("t-acme", "veh-07", 1),
+            ("t-acme", "veh-07", 5),
+            ("t-beta", "veh-01", 3),
+        ]:
+            await TenantDocuments(db, tenant).add_event(
+                Envelope(
+                    msg_id=uuid.uuid4().hex,
+                    tenant_id=tenant,
+                    vehicle_id=vehicle,
+                    run_id="r1",
+                    ts=recent + timedelta(seconds=seconds),
+                    channel="event",
+                    data={"type": "collision", "severity": "low"},
+                )
+            )
         await client.close()
 
     anyio.run(seed)
@@ -153,3 +169,19 @@ def test_telemetry_rejects_unknown_fields(client):
     params = {"vehicle_id": "veh-07", "fields": "speed_kmh,password"}
     response = client.get("/api/v1/telemetry", params=params, headers=ACME)
     assert response.status_code == 422
+
+
+def test_events_are_newest_first_and_tenant_scoped(client, recent):
+    acme = client.get("/api/v1/events", headers=ACME).json()["events"]
+    beta = client.get("/api/v1/events", headers=BETA).json()["events"]
+    assert [(e["vehicle_id"], e["ts"]) for e in acme] == [
+        ("veh-07", (recent + timedelta(seconds=5)).isoformat().replace("+00:00", "Z")),
+        ("veh-07", (recent + timedelta(seconds=1)).isoformat().replace("+00:00", "Z")),
+    ]
+    assert [e["vehicle_id"] for e in beta] == ["veh-01"]
+    assert acme[0]["type"] == "collision"
+
+
+def test_other_tenants_vehicle_events_are_not_found(client):
+    response = client.get("/api/v1/events?vehicle_id=veh-07", headers=BETA)
+    assert response.status_code == 404

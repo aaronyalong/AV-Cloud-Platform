@@ -60,6 +60,14 @@
   canvas { width: 100%; height: 100%; display: block; }
   .error { margin: 0 24px; margin-top: 16px; padding: 10px 14px; border-radius: 8px; background: var(--offline-bg); color: var(--offline-fg); }
   .legend { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  h3 { margin: 18px 0 8px; font-size: 14px; }
+  .events { list-style: none; margin: 0; padding: 0; }
+  .events li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .events li:last-child { border-bottom: 0; }
+  .events .when { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 72px; }
+  .sev { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+  .sev.high { background: var(--offline-bg); color: var(--offline-fg); }
+  .sev.medium, .sev.low { background: var(--stale-bg); color: var(--stale-fg); }
   footer { padding: 0 24px 20px; font-size: 12px; color: var(--muted); }
 </style>
 </head>
@@ -98,6 +106,8 @@
       </div>
       <div class="chart-wrap"><canvas id="chart" aria-label="Speed over the last 2 minutes" role="img"></canvas></div>
       <div class="legend" id="chart-note">Speed (km/h), last 2 minutes</div>
+      <h3>Recent events</h3>
+      <ul class="events" id="events"><li class="muted">No events in the last 24 hours.</li></ul>
     </div>
     <p class="muted" id="detail-empty">Click a row to see live telemetry.</p>
   </section>
@@ -200,6 +210,31 @@ function renderDetail(points) {
   drawChart(points);
 }
 
+function renderEvents(events) {
+  const list = $("events");
+  list.replaceChildren();
+  if (!events.length) {
+    const li = document.createElement("li");
+    li.className = "muted";
+    li.textContent = "No events in the last 24 hours.";
+    list.append(li);
+    return;
+  }
+  for (const e of events) {
+    const li = document.createElement("li");
+    const when = document.createElement("span");
+    when.className = "when";
+    when.textContent = new Date(e.ts).toLocaleTimeString();
+    const what = document.createElement("span");
+    what.textContent = `${e.type}${e.data.speed_kmh != null ? ` at ${e.data.speed_kmh.toFixed(0)} km/h` : ""}`;
+    const sev = document.createElement("span");
+    sev.className = `sev ${e.data.severity || "low"}`;
+    sev.textContent = e.data.severity || "low";
+    li.append(when, sev, what);
+    list.append(li);
+  }
+}
+
 function drawChart(points) {
   const canvas = $("chart");
   const ratio = window.devicePixelRatio || 1;
@@ -254,6 +289,8 @@ async function refresh() {
       const { points } = await api(`/api/v1/telemetry?${q}`);
       state.points = points;
       renderDetail(points);
+      const events = await api(`/api/v1/events?${new URLSearchParams({ vehicle_id: state.selected, limit: "5" })}`);
+      renderEvents(events.events);
     }
     $("error").hidden = true;
     $("refreshed").textContent = `Updated ${new Date().toLocaleTimeString()}`;

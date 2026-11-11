@@ -1,4 +1,4 @@
-"""Vehicle list with connectivity, and telemetry for one vehicle."""
+"""Vehicle list with connectivity, plus telemetry and events."""
 
 import math
 from datetime import UTC, datetime, timedelta
@@ -71,19 +71,8 @@ async def get_telemetry(
     max_points: Annotated[int, Query(ge=1, le=5000)] = 500,
 ) -> dict:
     selected = _parse_fields(fields)
-    end = _aware(end) if end else datetime.now(UTC)
-    start = _aware(start) if start else end - DEFAULT_WINDOW
-    if start > end or end - start > MAX_WINDOW:
-        raise HTTPException(422, "'from' must be before 'to', at most 24 hours apart")
-
-    # Postgres (RLS) decides whether the vehicle exists for this tenant, so
-    # another tenant's vehicle looks exactly like one that doesn't exist.
-    async with tenant_transaction(request.app.state.engine, tenant_id) as conn:
-        exists = await conn.scalar(
-            text("SELECT 1 FROM vehicle WHERE vehicle_id = :v"), {"v": vehicle_id}
-        )
-    if not exists:
-        raise HTTPException(404, "vehicle not found")
+    start, end = _window(start, end, DEFAULT_WINDOW)
+    await _require_vehicle(request, tenant_id, vehicle_id)
 
     docs = TenantDocuments(request.app.state.mongo_db, tenant_id)
     samples = await docs.telemetry_samples(vehicle_id, start, end, run_id)
@@ -100,6 +89,46 @@ async def get_telemetry(
         "total_samples": len(samples),
         "points": points,
     }
+
+
+@router.get("/events")
+async def get_events(
+    request: Request,
+    tenant_id: Tenant,
+    vehicle_id: str | None = None,
+    run_id: str | None = None,
+    start: Annotated[datetime | None, Query(alias="from")] = None,
+    end: Annotated[datetime | None, Query(alias="to")] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+) -> dict:
+    """Events such as collisions, newest first. Defaults to the last 24 hours."""
+    start, end = _window(start, end, MAX_WINDOW)
+    if vehicle_id:
+        await _require_vehicle(request, tenant_id, vehicle_id)
+    docs = TenantDocuments(request.app.state.mongo_db, tenant_id)
+    events = await docs.events(start, end, vehicle_id, run_id, limit)
+    return {"from": start, "to": end, "events": events}
+
+
+def _window(
+    start: datetime | None, end: datetime | None, default: timedelta
+) -> tuple[datetime, datetime]:
+    end = _aware(end) if end else datetime.now(UTC)
+    start = _aware(start) if start else end - default
+    if start > end or end - start > MAX_WINDOW:
+        raise HTTPException(422, "'from' must be before 'to', at most 24 hours apart")
+    return start, end
+
+
+async def _require_vehicle(request: Request, tenant_id: str, vehicle_id: str) -> None:
+    """404 unless the vehicle exists for this tenant. Postgres RLS decides, so
+    another tenant's vehicle looks exactly like one that doesn't exist."""
+    async with tenant_transaction(request.app.state.engine, tenant_id) as conn:
+        exists = await conn.scalar(
+            text("SELECT 1 FROM vehicle WHERE vehicle_id = :v"), {"v": vehicle_id}
+        )
+    if not exists:
+        raise HTTPException(404, "vehicle not found")
 
 
 def _parse_fields(fields: str | None) -> list[str]:
