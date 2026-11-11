@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import Settings
-from app.routes import health, vehicles
+from app.routes import commands, health, vehicles
 from avdata import mongo as avmongo
 
 
@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="AV Cloud Platform API", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(vehicles.router)
+app.include_router(commands.router)
 
 INDEX_HTML = Path(__file__).parent / "static" / "index.html"
 

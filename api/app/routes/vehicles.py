@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.auth import current_tenant
 from avdata.connectivity import connectivity_status
@@ -23,38 +24,50 @@ MAX_WINDOW = timedelta(hours=24)
 @router.get("/vehicles")
 async def list_vehicles(request: Request, tenant_id: Tenant) -> dict:
     async with tenant_transaction(request.app.state.engine, tenant_id) as conn:
-        # Statuses use the database clock, and the page shows "ago" relative to
-        # as_of, so a skewed browser clock can't disagree with the status.
-        as_of = await conn.scalar(text("SELECT now()"))
-        rows = (
-            await conn.execute(
-                text("""
-                    SELECT v.vehicle_id, v.name, t.status AS tenant_status,
-                           d.device_id, d.last_heartbeat_at, d.last_disconnect_at
-                    FROM vehicle v
-                    JOIN tenant t USING (tenant_id)
-                    LEFT JOIN iot_device d USING (tenant_id, vehicle_id)
-                    ORDER BY v.vehicle_id
-                """)
-            )
-        ).mappings()
-        vehicles = [
-            {
-                "vehicle_id": row["vehicle_id"],
-                "name": row["name"],
-                "device_id": row["device_id"],
-                "status": connectivity_status(
-                    as_of,
-                    row["last_heartbeat_at"],
-                    row["last_disconnect_at"],
-                    row["tenant_status"],
-                ),
-                "last_heartbeat_at": row["last_heartbeat_at"],
-                "last_disconnect_at": row["last_disconnect_at"],
-            }
-            for row in rows
-        ]
+        as_of, vehicles = await vehicles_with_status(conn)
     return {"tenant_id": tenant_id, "as_of": as_of, "vehicles": vehicles}
+
+
+async def vehicles_with_status(
+    conn: AsyncConnection, vehicle_id: str | None = None
+) -> tuple[datetime, list[dict]]:
+    """The tenant's vehicles (or one of them) with connectivity status.
+
+    Statuses use the database clock, and the page shows "ago" relative to
+    as_of, so a skewed browser clock can't disagree with the status.
+    """
+    as_of = await conn.scalar(text("SELECT now()"))
+    rows = (
+        await conn.execute(
+            text("""
+                SELECT v.vehicle_id, v.name, t.status AS tenant_status,
+                       d.device_id, d.last_heartbeat_at, d.last_disconnect_at
+                FROM vehicle v
+                JOIN tenant t USING (tenant_id)
+                LEFT JOIN iot_device d USING (tenant_id, vehicle_id)
+                WHERE CAST(:vehicle_id AS text) IS NULL OR v.vehicle_id = :vehicle_id
+                ORDER BY v.vehicle_id
+            """),
+            {"vehicle_id": vehicle_id},
+        )
+    ).mappings()
+    vehicles = [
+        {
+            "vehicle_id": row["vehicle_id"],
+            "name": row["name"],
+            "device_id": row["device_id"],
+            "status": connectivity_status(
+                as_of,
+                row["last_heartbeat_at"],
+                row["last_disconnect_at"],
+                row["tenant_status"],
+            ),
+            "last_heartbeat_at": row["last_heartbeat_at"],
+            "last_disconnect_at": row["last_disconnect_at"],
+        }
+        for row in rows
+    ]
+    return as_of, vehicles
 
 
 @router.get("/telemetry")
