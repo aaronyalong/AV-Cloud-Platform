@@ -12,7 +12,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from avdata.messages import Envelope, EventData, TelemetryData
+from avdata.messages import CommandAck, Envelope, EventData, TelemetryData
 from avdata.mongo import TenantDocuments
 from avdata.postgres import tenant_transaction
 from workers.queue import MessageQueue
@@ -70,6 +70,12 @@ class IngestWorker:
                 docs = TenantDocuments(self.mongo_db, envelope.tenant_id)
                 stored = await docs.add_event(envelope)
                 return "event" if stored else "duplicate"
+            case "cmd-ack":
+                try:
+                    ack = CommandAck.model_validate(envelope.data)
+                except ValidationError:
+                    return "rejected"
+                return await self._record_ack(envelope, ack)
             case _:
                 return "ignored"
 
@@ -115,6 +121,32 @@ class IngestWorker:
                 ),
                 {"v": envelope.vehicle_id, "ts": envelope.ts},
             )
+
+    async def _record_ack(self, envelope: Envelope, ack: CommandAck) -> str:
+        """SENT -> ACKED/REJECTED, once. A repeated ack changes nothing."""
+        params = {
+            "id": ack.command_id,
+            "v": envelope.vehicle_id,
+            "status": ack.status,
+            "ts": envelope.ts,
+        }
+        async with tenant_transaction(self.engine, envelope.tenant_id) as conn:
+            updated = await conn.execute(
+                text(
+                    "UPDATE vehicle_command SET status = :status, acked_at = :ts"
+                    " WHERE command_id = :id AND vehicle_id = :v AND status = 'SENT'"
+                ),
+                params,
+            )
+            if updated.rowcount:
+                return "cmd-ack"
+            known = await conn.scalar(
+                text(
+                    "SELECT 1 FROM vehicle_command WHERE command_id = :id AND vehicle_id = :v"
+                ),
+                params,
+            )
+        return "duplicate" if known else "rejected"
 
     async def run(self, queue: MessageQueue) -> None:
         """Consume messages forever. A failed message is logged and dropped;

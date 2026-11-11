@@ -22,6 +22,12 @@ TELEMETRY_INTERVAL_S = 0.5
 HEARTBEAT_INTERVAL_S = 10.0
 # Each vehicle reports a scripted collision this often, staggered by vehicle.
 EVENT_INTERVAL_S = 45.0
+# How a vehicle obeys a command: hold this top speed for COMMAND_HOLD_S.
+COMMAND_SPEED_LIMIT_KMH = {"PULL_OVER": 0.0, "SLOW_DOWN": 15.0}
+COMMAND_HOLD_S = 25.0
+COMMAND_ACK_DELAY_S = 1.0
+MAX_DECEL_KMH_S = 12.0
+MAX_ACCEL_KMH_S = 8.0
 
 
 class SimVehicle:
@@ -38,13 +44,22 @@ class SimVehicle:
         self.angle = self.phase
         self.speed_kmh = self.base_speed
         self.elapsed = 0.0
+        self.limit_kmh: float | None = None
+        self.limit_until = 0.0
 
     def step(self, dt: float) -> dict:
         """Advance dt seconds and return the telemetry data."""
         self.elapsed += dt
         previous = self.speed_kmh
         wave = math.sin(2 * math.pi * self.elapsed / self.cycle_s + self.phase)
-        self.speed_kmh = max(0.0, self.base_speed + 18.0 * wave)
+        target = max(0.0, self.base_speed + 18.0 * wave)
+        if self.limit_kmh is not None and self.elapsed < self.limit_until:
+            target = min(target, self.limit_kmh)
+        # Change speed smoothly, so obeying a command shows as braking.
+        self.speed_kmh = min(
+            max(target, previous - MAX_DECEL_KMH_S * dt),
+            previous + MAX_ACCEL_KMH_S * dt,
+        )
         self.angle += (self.speed_kmh / 3.6) * dt / self.radius_m
         accel = (self.speed_kmh - previous) / dt
         return {
@@ -56,6 +71,10 @@ class SimVehicle:
             "brake": round(min(1.0, max(0.0, -accel / 10)), 2),
             "steer": round(min(1.0, 2.5 / self.radius_m), 3),
         }
+
+    def obey(self, command: str) -> None:
+        self.limit_kmh = COMMAND_SPEED_LIMIT_KMH[command]
+        self.limit_until = self.elapsed + COMMAND_HOLD_S
 
 
 def collision_event(sample: dict) -> dict:
@@ -92,6 +111,7 @@ class Simulator:
         ]
         self.recent: deque[dict] = deque(maxlen=replay_duplicates or None)
         self.replay_duplicates = replay_duplicates
+        self.running: set[str] = set()
 
     async def send(self, vehicle: SimVehicle, channel: str, data: dict) -> None:
         envelope = Envelope(
@@ -113,9 +133,11 @@ class Simulator:
         start = loop.time()
         next_heartbeat = start
         next_event = start + 8.0 + 9.0 * vehicle.index
+        self.running.add(vehicle.vehicle_id)
         while True:
             now = loop.time()
             if vehicle.vehicle_id == self.stop and now - start >= self.stop_after_s:
+                self.running.discard(vehicle.vehicle_id)
                 logger.info(
                     "%s stopped sending (simulated lost connection)", vehicle.vehicle_id
                 )
@@ -137,6 +159,31 @@ class Simulator:
         logger.info("Replaying %d already-sent messages as duplicates", len(messages))
         for message in messages:
             await self.queue.publish(message)
+
+    async def deliver_command(
+        self, tenant_id: str, vehicle_id: str, command_id: str, command: str
+    ) -> bool:
+        """A command reaches a vehicle, which obeys and acks it a moment later.
+        A vehicle that isn't running never answers, so its command stays SENT."""
+        vehicle = next(
+            (
+                v
+                for v in self.vehicles
+                if (v.tenant_id, v.vehicle_id) == (tenant_id, vehicle_id)
+            ),
+            None,
+        )
+        if vehicle is None or vehicle_id not in self.running:
+            return False
+        logger.info(
+            "%s received %s; obeying for %.0f s", vehicle_id, command, COMMAND_HOLD_S
+        )
+        vehicle.obey(command)
+        await asyncio.sleep(COMMAND_ACK_DELAY_S)
+        await self.send(
+            vehicle, "cmd-ack", {"command_id": command_id, "status": "ACKED"}
+        )
+        return True
 
     async def disconnect(self) -> None:
         """Send a disconnect for every vehicle still running (clean shutdown)."""

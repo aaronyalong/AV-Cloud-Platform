@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
@@ -56,3 +57,10 @@ class EventData(BaseModel):
 
     type: str = Field(min_length=1)
     severity: Literal["low", "medium", "high"] = "low"
+
+
+class CommandAck(BaseModel):
+    """The data of a cmd-ack message: the vehicle's answer to a command."""
+
+    command_id: UUID
+    status: Literal["ACKED", "REJECTED"]

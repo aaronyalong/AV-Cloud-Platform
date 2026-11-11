@@ -17,8 +17,10 @@ import signal
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from avdata import mongo as avmongo
+from workers.downlink import CommandDownlink
 from workers.ingest import IngestWorker
 from workers.queue import InProcessQueue
+from workers.seed import DEMO_FLEET
 from workers.simulator import Simulator
 
 logger = logging.getLogger("workers.pipeline")
@@ -94,11 +96,14 @@ async def main() -> None:
     worker_task = asyncio.create_task(worker.run(queue))
     stats_task = asyncio.create_task(log_stats(worker))
     sim_task = asyncio.create_task(simulator.run())
+    downlink = CommandDownlink(engine, simulator, list(DEMO_FLEET))
+    downlink_task = asyncio.create_task(downlink.run())
     try:
         await stopping.wait()
     finally:
-        sim_task.cancel()
-        await asyncio.gather(sim_task, return_exceptions=True)
+        for task in (sim_task, downlink_task):
+            task.cancel()
+        await asyncio.gather(sim_task, downlink_task, return_exceptions=True)
         await simulator.disconnect()
         await queue.drain()
         for task in (worker_task, stats_task):

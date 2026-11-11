@@ -5,14 +5,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
 
-from avdata import mongo as avmongo
 from avdata.messages import Envelope
 from avdata.postgres import tenant_transaction
-from workers.ingest import IngestWorker
 from workers.queue import InProcessQueue
-from workers.seed import seed_demo_fleet
 from workers.simulator import Simulator
 
 pytestmark = pytest.mark.anyio
@@ -39,32 +35,6 @@ def message(channel="telemetry", tenant="t-acme", vehicle="veh-07", ts=T0, data=
         channel=channel,
         data=SAMPLE if data is None and channel == "telemetry" else (data or {}),
     ).to_message()
-
-
-@pytest.fixture
-async def worker(migrated_db, pg_url, mongo_url):
-    owner = create_async_engine(pg_url("av_owner"))
-    await seed_demo_fleet(owner)
-    await owner.dispose()
-    # Reset connection times as the superuser: av_owner is subject to RLS too.
-    superuser = create_async_engine(pg_url("postgres"))
-    async with superuser.begin() as conn:
-        await conn.execute(
-            text(
-                "UPDATE iot_device SET last_heartbeat_at = NULL, last_disconnect_at = NULL"
-            )
-        )
-        await conn.execute(text("UPDATE vehicle SET last_seen_at = NULL"))
-    await superuser.dispose()
-
-    engine = create_async_engine(pg_url("av_app"))
-    client = avmongo.connect(mongo_url)
-    await client.drop_database("av_test")
-    db = client["av_test"]
-    await avmongo.ensure_indexes(db)
-    yield IngestWorker(engine, db)
-    await engine.dispose()
-    await client.close()
 
 
 async def device_times(worker, tenant="t-acme", vehicle="veh-07"):
