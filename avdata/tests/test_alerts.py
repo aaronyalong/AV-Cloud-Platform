@@ -69,8 +69,8 @@ def test_active_status_helpers():
         assert is_active_alert_status(status)
     assert is_active_alert_status(ALERT_STATUS_ACTIVE)
     assert is_active_alert_status(ALERT_STATUS_ACKNOWLEDGED)
-    assert is_active_alert_status(ALERT_STATUS_FALSE_ALARM)
     assert not is_active_alert_status(ALERT_STATUS_RESOLVED)
+    assert not is_active_alert_status(ALERT_STATUS_FALSE_ALARM)
     assert normalize_alert_status("acknowledged") == ALERT_STATUS_ACKNOWLEDGED
     assert normalize_alert_status("resolved") == ALERT_STATUS_RESOLVED
     assert normalize_alert_status("false alarm") == ALERT_STATUS_FALSE_ALARM

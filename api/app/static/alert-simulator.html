@@ -242,6 +242,8 @@ function statusPill(status) {
   return span;
 }
 
+// --- API and navigation helpers ---
+
 async function api(path, options = {}) {
   const headers = { "X-Tenant-Id": state.tenant, ...(options.headers || {}) };
   const res = await fetch(path, { cache: "no-store", ...options, headers });
@@ -268,6 +270,8 @@ function syncNavLinks() {
 function updateSubmitState() {
   $("generate-btn").disabled = !(state.catalogLoaded && state.hasVehicles);
 }
+
+// --- Catalog and vehicle form population ---
 
 async function loadCatalog() {
   const catalog = await api("/api/v1/alerts/types");
@@ -324,6 +328,8 @@ function renderVehicleOptions(vehicles) {
   state.hasVehicles = true;
   updateSubmitState();
 }
+
+// --- Active counts table, recent alerts list, and read-only details modal ---
 
 function renderVehicleCounts(vehicles) {
   const body = $("vehicle-counts");
@@ -538,6 +544,8 @@ async function openAlertDetail(alertId, vehicleName) {
     body.append(msg);
   }
 }
+
+// --- Data refresh and simulator form submission ---
 
 async function refreshTenantData() {
   try {

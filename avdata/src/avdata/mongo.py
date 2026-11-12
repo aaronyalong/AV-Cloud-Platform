@@ -243,16 +243,20 @@ class TenantDocuments:
         """Create and store a tenant-scoped alert."""
         if not vehicle_id:
             raise ValueError("vehicle_id is required")
+
         resolved_category, canonical_type = resolve_alert_type(alert_type, category)
         if severity not in ALERT_SEVERITIES:
             raise ValueError(f"unsupported severity: {severity!r}")
         if status not in ALERT_STATUSES:
             raise ValueError(f"unsupported alert status: {status!r}")
+
         cleaned_description = (
             description.strip() or None if description is not None else None
         )
         aid = alert_id or str(uuid.uuid4())
         ts = created_at or datetime.now(UTC)
+
+        # Prefix _id with tenant_id so IDs stay isolated across tenants.
         doc = {
             "_id": f"{self.tenant_id}:{aid}",
             "alert_id": aid,
@@ -281,6 +285,8 @@ class TenantDocuments:
         query: dict = {"tenant_id": self.tenant_id}
         if vehicle_id:
             query["vehicle_id"] = vehicle_id
+
+        # active_only restricts to unresolved statuses; RESOLVED and FALSE_ALARM are excluded.
         if status is not None and active_only:
             if status not in ACTIVE_ALERT_STATUSES:
                 return []
@@ -299,6 +305,7 @@ class TenantDocuments:
         """Retrieve a single alert for this tenant, or None if not found."""
         if not alert_id:
             return None
+
         doc = await self._db[ALERTS].find_one(
             {"_id": f"{self.tenant_id}:{alert_id}", "tenant_id": self.tenant_id}
         )
@@ -308,6 +315,7 @@ class TenantDocuments:
         """Update an alert's status for this tenant, or None if not found."""
         if not alert_id:
             return None
+
         normalized = normalize_alert_status(status)
         doc = await self._db[ALERTS].find_one_and_update(
             {"_id": f"{self.tenant_id}:{alert_id}", "tenant_id": self.tenant_id},

@@ -119,9 +119,7 @@ def test_create_alert_records_timestamp_and_updates_vehicle_count(client):
     assert after == {"veh-07": 2, "veh-09": 1, "veh-12": 0}
 
 
-def test_vehicle_alert_count_excludes_resolved_and_keeps_active_statuses(
-    client, mongo_url
-):
+def test_vehicle_alert_count_excludes_resolved_and_false_alarm(client, mongo_url):
     async def seed_mixed_statuses() -> None:
         client_mongo = avmongo.connect(mongo_url)
         try:
@@ -164,17 +162,13 @@ def test_vehicle_alert_count_excludes_resolved_and_keeps_active_statuses(
         v["vehicle_id"]: v["alert_count"]
         for v in client.get("/api/v1/vehicles", headers=ACME).json()["vehicles"]
     }
-    assert counts["veh-07"] == 3
+    assert counts["veh-07"] == 2
 
     active_only = client.get(
         "/api/v1/alerts", params={"active_only": True}, headers=ACME
     ).json()["alerts"]
-    assert len(active_only) == 3
-    assert {a["status"] for a in active_only} == {
-        "ACTIVE",
-        "ACKNOWLEDGED",
-        "FALSE_ALARM",
-    }
+    assert len(active_only) == 2
+    assert {a["status"] for a in active_only} == {"ACTIVE", "ACKNOWLEDGED"}
 
 
 def test_alerts_are_tenant_isolated_and_reject_unknown_vehicles(client):
@@ -380,8 +374,17 @@ def test_update_alert_status_transitions_and_tenant_isolation(client):
         client.get("/api/v1/vehicles", headers=ACME).json()["vehicles"][0][
             "alert_count"
         ]
-        == 1
+        == 0
     )
+    assert (
+        client.get("/api/v1/alerts", params={"active_only": True}, headers=ACME).json()[
+            "alerts"
+        ]
+        == []
+    )
+    recent_after_fa = client.get("/api/v1/alerts", headers=ACME).json()["alerts"]
+    assert len(recent_after_fa) == 1
+    assert recent_after_fa[0]["status"] == "FALSE_ALARM"
 
     res = client.patch(
         f"/api/v1/alerts/{alert_id}",

@@ -56,7 +56,9 @@ async def create_alert(
     request: Request, tenant_id: Tenant, body: CreateAlertRequest
 ) -> dict:
     """Create an alert for an existing vehicle in the caller's tenant."""
+    # Postgres RLS verifies the vehicle belongs to this tenant before storing in Mongo.
     await require_vehicle(request, tenant_id, body.vehicle_id)
+
     docs = TenantDocuments(request.app.state.mongo_db, tenant_id)
     return await docs.create_alert(
         vehicle_id=body.vehicle_id,
@@ -79,8 +81,10 @@ async def list_alerts(
     """Alerts for the caller's tenant, newest first."""
     if status is not None and status not in ALERT_STATUSES:
         raise HTTPException(422, f"unknown alert status: {status}")
+
     if vehicle_id:
         await require_vehicle(request, tenant_id, vehicle_id)
+
     docs = TenantDocuments(request.app.state.mongo_db, tenant_id)
     alerts = await docs.alerts(
         vehicle_id=vehicle_id,
@@ -98,6 +102,7 @@ async def get_alert(request: Request, tenant_id: Tenant, alert_id: str) -> dict:
     alert = await docs.alert(alert_id)
     if alert is None:
         raise HTTPException(404, "alert not found")
+
     return alert
 
 
@@ -113,4 +118,5 @@ async def update_alert_status(
     updated = await docs.update_alert_status(alert_id, body.status)
     if updated is None:
         raise HTTPException(404, "alert not found")
+
     return updated

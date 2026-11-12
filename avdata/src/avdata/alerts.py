@@ -10,8 +10,7 @@ ALERT_STATUS_ACKNOWLEDGED = "ACKNOWLEDGED"
 ALERT_STATUS_RESOLVED = "RESOLVED"
 ALERT_STATUS_FALSE_ALARM = "FALSE_ALARM"
 
-# Active/unresolved alerts include acknowledged and false-alarm states until
-# explicitly resolved.
+# Active alerts are still unresolved and count toward a vehicle's active alert badge.
 ACTIVE_ALERT_STATUSES: tuple[str, ...] = (
     ALERT_STATUS_ACTIVE,
     "OCCURRED",
@@ -19,9 +18,13 @@ ACTIVE_ALERT_STATUSES: tuple[str, ...] = (
     "OPEN",
     ALERT_STATUS_ACKNOWLEDGED,
     "DISPATCHED",
+)
+
+# Terminal alert states are excluded from active counts and active alert lists.
+RESOLVED_ALERT_STATUSES: tuple[str, ...] = (
+    ALERT_STATUS_RESOLVED,
     ALERT_STATUS_FALSE_ALARM,
 )
-RESOLVED_ALERT_STATUSES: tuple[str, ...] = (ALERT_STATUS_RESOLVED,)
 ALERT_STATUSES: tuple[str, ...] = (*ACTIVE_ALERT_STATUSES, *RESOLVED_ALERT_STATUSES)
 
 _STATUS_ALIASES: dict[str, str] = {
@@ -103,6 +106,7 @@ ALERT_CATALOG: tuple[dict, ...] = (
     },
 )
 
+# Map both canonical type names and full UI labels back to (category, canonical_type).
 _TYPE_LOOKUP: dict[str, tuple[str, str]] = {}
 for _group in ALERT_CATALOG:
     _category = _group["category"]
@@ -117,12 +121,14 @@ def resolve_alert_type(alert_type: str, category: str | None = None) -> tuple[st
     resolved = _TYPE_LOOKUP.get(alert_type)
     if resolved is None:
         raise ValueError(f"unsupported alert_type: {alert_type!r}")
+
     expected_category, canonical_type = resolved
     if category is not None and category != expected_category:
         raise ValueError(
             f"alert_type {canonical_type!r} belongs to category {expected_category!r},"
             f" not {category!r}"
         )
+
     return expected_category, canonical_type
 
 
