@@ -25,6 +25,11 @@ MAX_WINDOW = timedelta(hours=24)
 async def list_vehicles(request: Request, tenant_id: Tenant) -> dict:
     async with tenant_transaction(request.app.state.engine, tenant_id) as conn:
         as_of, vehicles = await vehicles_with_status(conn)
+    counts = await TenantDocuments(
+        request.app.state.mongo_db, tenant_id
+    ).active_alert_counts()
+    for vehicle in vehicles:
+        vehicle["alert_count"] = counts.get(vehicle["vehicle_id"], 0)
     return {"tenant_id": tenant_id, "as_of": as_of, "vehicles": vehicles}
 
 

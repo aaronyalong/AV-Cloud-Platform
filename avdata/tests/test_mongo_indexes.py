@@ -6,7 +6,7 @@ import pytest
 from pymongo import AsyncMongoClient
 from pymongo.errors import DuplicateKeyError
 
-from avdata.mongo import EVENTS, INDEXES, TELEMETRY, ensure_indexes
+from avdata.mongo import ALERTS, EVENTS, INDEXES, TELEMETRY, ensure_indexes
 
 pytestmark = pytest.mark.anyio
 
@@ -59,6 +59,26 @@ async def test_events_indexes(db):
         ),
         "tenant_run_time": ([("tenant_id", 1), ("run_id", 1), ("ts", 1)], False, None),
         "ttl": ([("expires_at", 1)], False, 0),
+    }
+
+
+async def test_alerts_indexes(db):
+    assert await index_specs(db, ALERTS) == {
+        "tenant_status_vehicle": (
+            [("tenant_id", 1), ("status", 1), ("vehicle_id", 1)],
+            False,
+            None,
+        ),
+        "tenant_vehicle_created": (
+            [("tenant_id", 1), ("vehicle_id", 1), ("created_at", 1)],
+            False,
+            None,
+        ),
+        "tenant_created": (
+            [("tenant_id", 1), ("created_at", 1)],
+            False,
+            None,
+        ),
     }
 
 

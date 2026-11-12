@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alert Simulator · AV Cloud Platform</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #5f6b7a; --line: #e3e6eb;
+    --accent: #2f6fde; --row-hover: #f0f4fb; --row-selected: #e4edfc;
+    --online-bg: #e3f6e8; --online-fg: #146c2e;
+    --stale-bg: #fff3d6; --stale-fg: #8a5a00;
+    --offline-bg: #fde4e2; --offline-fg: #a3261b;
+    --never-bg: #eceef1; --never-fg: #4a5361;
+    --suspended-bg: #ece6fa; --suspended-fg: #5b3aa8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1b2029; --text: #e6e9ee; --muted: #9aa4b2; --line: #2c333f;
+      --accent: #6b9cff; --row-hover: #222a36; --row-selected: #24324a;
+      --online-bg: #133a22; --online-fg: #7ee2a0;
+      --stale-bg: #3d3011; --stale-fg: #f3c96b;
+      --offline-bg: #43201d; --offline-fg: #ff9d93;
+      --never-bg: #2a2f38; --never-fg: #b4bcc8;
+      --suspended-bg: #2e2645; --suspended-fg: #c4b2ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 16px 24px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 19px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .nav { display: flex; gap: 8px; }
+  .nav a { text-decoration: none; font-size: 13px; font-weight: 600; padding: 5px 11px; border-radius: 6px; border: 1px solid var(--line); color: var(--text); }
+  .nav a:hover { background: var(--row-hover); }
+  .nav a.active { background: var(--row-selected); border-color: var(--accent); color: var(--accent); }
+  header label { font-size: 14px; color: var(--muted); }
+  header select { margin-left: 6px; font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  .refresh { margin-left: auto; color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; padding: 20px 24px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 16px; } header { padding: 14px 16px; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+  h2 { margin: 0 0 12px; font-size: 16px; }
+  h3 { margin: 18px 0 8px; font-size: 14px; }
+  .muted { color: var(--muted); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .form-grid { display: grid; gap: 14px; }
+  .field { display: grid; gap: 6px; }
+  .field label { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .field select, .field textarea {
+    width: 100%; font: inherit; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  }
+  .field textarea { resize: vertical; min-height: 76px; }
+  .field select:focus-visible, .field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 4px; }
+  button { font: inherit; font-weight: 600; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .6; cursor: not-allowed; }
+  button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .feedback { margin-top: 14px; padding: 10px 14px; border-radius: 8px; font-size: 14px; }
+  .feedback.success { background: var(--online-bg); color: var(--online-fg); }
+  .feedback.error { background: var(--offline-bg); color: var(--offline-fg); }
+  .feedback a { color: inherit; font-weight: 600; }
+  .error { margin: 16px 24px 0; padding: 10px 14px; border-radius: 8px; background: var(--offline-bg); color: var(--offline-fg); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+  button.alert-count {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 26px;
+    padding: 2px 9px; border: 1px solid transparent; border-radius: 999px;
+    font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+    background: var(--offline-bg); color: var(--offline-fg); cursor: pointer;
+  }
+  button.alert-count:hover { filter: brightness(0.95); border-color: var(--offline-fg); }
+  button.btn-secondary {
+    font: inherit; font-size: 13px; font-weight: 600; padding: 5px 11px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer;
+  }
+  button.btn-secondary:hover { background: var(--row-hover); }
+  .status-pill { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .status-pill.ACTIVE, .status-pill.OCCURRED, .status-pill.REPORTED, .status-pill.OPEN, .status-pill.DISPATCHED {
+    background: var(--offline-bg); color: var(--offline-fg);
+  }
+  .status-pill.ACKNOWLEDGED { background: var(--row-selected); color: var(--accent); }
+  .status-pill.FALSE_ALARM { background: var(--suspended-bg); color: var(--suspended-fg); }
+  .status-pill.RESOLVED { background: var(--online-bg); color: var(--online-fg); }
+  .sev { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; text-transform: capitalize; }
+  .sev.high { background: var(--offline-bg); color: var(--offline-fg); }
+  .sev.medium, .sev.low { background: var(--stale-bg); color: var(--stale-fg); }
+  .cat-tag { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--never-bg); color: var(--never-fg); }
+  .alerts-list { list-style: none; margin: 0; padding: 0; }
+  .alerts-list li {
+    padding: 10px 8px; border-bottom: 1px solid var(--line); display: grid; gap: 4px;
+    cursor: pointer; border-radius: 6px;
+  }
+  .alerts-list li:hover { background: var(--row-hover); }
+  .alerts-list li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .alerts-list li.muted { cursor: default; }
+  .alerts-list li.muted:hover { background: transparent; }
+  .alerts-list li:last-child { border-bottom: 0; }
+  .alert-row-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .when { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; margin-left: auto; }
+  .alert-desc { font-size: 13px; color: var(--muted); }
+  dialog.alert-modal {
+    width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px);
+    padding: 0; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--panel); color: var(--text); box-shadow: 0 20px 50px rgba(0, 0, 0, .28);
+  }
+  dialog.alert-modal::backdrop { background: rgba(15, 20, 30, .55); }
+  .alert-modal-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    padding: 16px 18px; border-bottom: 1px solid var(--line);
+  }
+  .alert-modal-body { padding: 16px 18px; overflow-y: auto; max-height: 65vh; display: grid; gap: 12px; }
+  .alert-modal-foot {
+    padding: 12px 18px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end;
+  }
+  .alert-modal-foot a { color: var(--accent); font-size: 13px; font-weight: 600; text-decoration: none; }
+  .alert-modal-foot a:hover { text-decoration: underline; }
+  .alert-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; }
+  .alert-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .alert-card-title { font-weight: 700; font-size: 15px; }
+  .alert-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; font-size: 13px; }
+  .alert-meta .k { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .alert-card-desc { font-size: 14px; padding-top: 6px; border-top: 1px solid var(--line); }
+  footer { padding: 0 24px 20px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Alert Simulator</h1>
+    <div class="sub">AV Cloud Platform · Alert Simulation</div>
+  </div>
+  <nav class="nav" aria-label="Primary">
+    <a href="/" id="dash-link">Dashboard</a>
+    <a href="/alerts" id="alerts-link">Alert Management</a>
+    <a href="/alert-simulator" class="active" id="sim-link">Alert Simulator</a>
+  </nav>
+  <label>Tenant
+    <select id="tenant">
+      <option value="t-acme">t-acme · Acme Logistics</option>
+      <option value="t-beta">t-beta · Beta Mobility</option>
+    </select>
+  </label>
+  <span class="refresh" id="refreshed">Loading…</span>
+</header>
+<div class="error" id="error" hidden></div>
+<main>
+  <section>
+    <h2>Simulate Vehicle Alert</h2>
+    <p class="muted" style="margin-top:0;font-size:14px;">Manually generate an alert for an existing fleet vehicle during demonstrations.</p>
+    <form class="form-grid" id="alert-form">
+      <div class="field">
+        <label for="vehicle">Vehicle</label>
+        <select id="vehicle" required>
+          <option value="">Loading vehicles…</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="alert-type">Alert type</label>
+        <select id="alert-type" required>
+          <option value="">Loading alert types…</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="severity">Severity</label>
+        <select id="severity" required>
+          <option value="">Loading severities…</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="description">Description <span class="muted">(optional)</span></label>
+        <textarea id="description" maxlength="500" placeholder="Optional context or incident notes…"></textarea>
+      </div>
+      <div class="actions">
+        <button type="submit" id="generate-btn" disabled>Generate Alert</button>
+        <a id="manage-link" href="/alerts" style="font-size:14px;color:var(--accent);text-decoration:none;font-weight:600;">Open Alert Management →</a>
+      </div>
+    </form>
+    <div id="feedback" class="feedback" role="status" hidden></div>
+  </section>
+
+  <section>
+    <h2>Active Vehicle Alerts</h2>
+    <table>
+      <thead><tr><th>Vehicle</th><th>Name</th><th>Active alerts</th></tr></thead>
+      <tbody id="vehicle-counts"><tr><td colspan="3" class="muted">Loading…</td></tr></tbody>
+    </table>
+
+    <h3>Recent Simulated Alerts</h3>
+    <ul class="alerts-list" id="recent-alerts">
+      <li class="muted">Loading…</li>
+    </ul>
+  </section>
+</main>
+<dialog id="alert-modal" class="alert-modal" aria-labelledby="alert-modal-title">
+  <div class="alert-modal-head">
+    <div>
+      <h2 id="alert-modal-title" style="margin:0">Alert details</h2>
+      <div class="muted" id="alert-modal-sub" style="font-size:13px"></div>
+    </div>
+    <button type="button" class="btn-secondary" id="alert-modal-close" aria-label="Close alert details">Close</button>
+  </div>
+  <div id="alert-modal-body" class="alert-modal-body"></div>
+  <div class="alert-modal-foot">
+    <a id="alert-modal-manage" href="/alerts">Manage in Alert Management →</a>
+  </div>
+</dialog>
+<footer>Alerts created here are saved via /api/v1/alerts and tracked on the Dashboard and Alert Management pages.</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+if ([...$("tenant").options].some((o) => o.value === params.get("tenant"))) {
+  $("tenant").value = params.get("tenant");
+}
+
+const state = {
+  tenant: $("tenant").value,
+  catalogLoaded: false,
+  hasVehicles: false,
+  vehicleNames: new Map(),
+};
+
+const STATUS_LABELS = {
+  ACTIVE: "Active",
+  OCCURRED: "Occurred",
+  REPORTED: "Reported",
+  OPEN: "Open",
+  ACKNOWLEDGED: "Acknowledged",
+  DISPATCHED: "Dispatched",
+  RESOLVED: "Resolved",
+  FALSE_ALARM: "False Alarm",
+};
+
+function statusPill(status) {
+  const span = document.createElement("span");
+  span.className = `status-pill ${status}`;
+  span.textContent = STATUS_LABELS[status] || status;
+  return span;
+}
+
+async function api(path, options = {}) {
+  const headers = { "X-Tenant-Id": state.tenant, ...(options.headers || {}) };
+  const res = await fetch(path, { cache: "no-store", ...options, headers });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = typeof body.detail === "string"
+      ? body.detail
+      : Array.isArray(body.detail)
+        ? body.detail.map((d) => d.msg).join("; ")
+        : `${path.split("?")[0]} returned ${res.status}`;
+    throw new Error(detail);
+  }
+  return body;
+}
+
+function syncNavLinks() {
+  const q = `?tenant=${encodeURIComponent(state.tenant)}`;
+  $("dash-link").href = `/${q}`;
+  $("alerts-link").href = `/alerts${q}`;
+  $("manage-link").href = `/alerts${q}`;
+  $("sim-link").href = `/alert-simulator${q}`;
+}
+
+function updateSubmitState() {
+  $("generate-btn").disabled = !(state.catalogLoaded && state.hasVehicles);
+}
+
+async function loadCatalog() {
+  const catalog = await api("/api/v1/alerts/types");
+  const typeSelect = $("alert-type");
+  typeSelect.replaceChildren();
+  for (const group of catalog.categories) {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = group.category;
+    for (const item of group.types) {
+      const opt = document.createElement("option");
+      opt.value = item.type;
+      opt.textContent = item.label;
+      optgroup.append(opt);
+    }
+    typeSelect.append(optgroup);
+  }
+
+  const sevSelect = $("severity");
+  sevSelect.replaceChildren();
+  for (const sev of catalog.severities) {
+    const opt = document.createElement("option");
+    opt.value = sev;
+    opt.textContent = sev.charAt(0).toUpperCase() + sev.slice(1);
+    if (sev === "high") opt.selected = true;
+    sevSelect.append(opt);
+  }
+
+  state.catalogLoaded = true;
+  updateSubmitState();
+}
+
+function renderVehicleOptions(vehicles) {
+  const select = $("vehicle");
+  const previous = select.value || params.get("vehicle");
+  select.replaceChildren();
+
+  if (!vehicles.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "No vehicles available for this tenant";
+    select.append(opt);
+    state.hasVehicles = false;
+    updateSubmitState();
+    return;
+  }
+
+  for (const v of vehicles) {
+    const opt = document.createElement("option");
+    opt.value = v.vehicle_id;
+    opt.textContent = `${v.vehicle_id} · ${v.name}`;
+    if (v.vehicle_id === previous) opt.selected = true;
+    select.append(opt);
+  }
+  state.hasVehicles = true;
+  updateSubmitState();
+}
+
+function renderVehicleCounts(vehicles) {
+  const body = $("vehicle-counts");
+  body.replaceChildren();
+  if (!vehicles.length) {
+    body.append(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="3" class="muted">No vehicles for this tenant.</td>' }));
+    return;
+  }
+  for (const v of vehicles) {
+    const tr = document.createElement("tr");
+    const idTd = document.createElement("td");
+    idTd.className = "mono";
+    idTd.textContent = v.vehicle_id;
+    const nameTd = document.createElement("td");
+    nameTd.textContent = v.name;
+    const countTd = document.createElement("td");
+    const count = Number(v.alert_count || 0);
+    if (count > 0) {
+      const badge = document.createElement("button");
+      badge.type = "button";
+      badge.className = "alert-count";
+      badge.textContent = String(count);
+      badge.title = "Click to view active alert details";
+      badge.setAttribute(
+        "aria-label",
+        `${count} active alert${count === 1 ? "" : "s"} for ${v.vehicle_id} — view details`,
+      );
+      badge.addEventListener("click", () => openVehicleAlerts(v.vehicle_id, v.name));
+      countTd.append(badge);
+    } else {
+      countTd.className = "muted";
+      countTd.textContent = "-";
+    }
+    tr.append(idTd, nameTd, countTd);
+    body.append(tr);
+  }
+}
+
+function renderRecentAlerts(alerts) {
+  const list = $("recent-alerts");
+  list.replaceChildren();
+  if (!alerts.length) {
+    const li = document.createElement("li");
+    li.className = "muted";
+    li.textContent = "No alerts generated for this tenant yet.";
+    list.append(li);
+    return;
+  }
+  for (const a of alerts) {
+    const li = document.createElement("li");
+    li.tabIndex = 0;
+    li.setAttribute("role", "button");
+    li.title = "Click to view alert details";
+    const top = document.createElement("div");
+    top.className = "alert-row-top";
+
+    const veh = document.createElement("span");
+    veh.className = "mono";
+    veh.textContent = a.vehicle_id;
+
+    const sev = document.createElement("span");
+    sev.className = `sev ${a.severity}`;
+    sev.textContent = a.severity;
+
+    const cat = document.createElement("span");
+    cat.className = "cat-tag";
+    cat.textContent = a.category;
+
+    const title = document.createElement("strong");
+    title.textContent = a.alert_type;
+
+    const st = statusPill(a.status);
+
+    const when = document.createElement("span");
+    when.className = "when";
+    when.textContent = new Date(a.created_at).toLocaleString();
+
+    top.append(veh, sev, cat, title, st, when);
+    li.append(top);
+
+    if (a.description) {
+      const desc = document.createElement("div");
+      desc.className = "alert-desc";
+      desc.textContent = a.description;
+      li.append(desc);
+    }
+    const open = () => openAlertDetail(a.alert_id, state.vehicleNames.get(a.vehicle_id));
+    li.addEventListener("click", open);
+    li.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
+    });
+    list.append(li);
+  }
+}
+
+function buildAlertCard(a, vehicleName) {
+  const card = document.createElement("article");
+  card.className = "alert-card";
+
+  const top = document.createElement("div");
+  top.className = "alert-card-top";
+  const title = document.createElement("span");
+  title.className = "alert-card-title";
+  title.textContent = a.alert_type;
+  const cat = document.createElement("span");
+  cat.className = "cat-tag";
+  cat.textContent = a.category;
+  const sev = document.createElement("span");
+  sev.className = `sev ${a.severity}`;
+  sev.textContent = a.severity;
+  const st = statusPill(a.status);
+  top.append(title, cat, sev, st);
+  card.append(top);
+
+  const meta = document.createElement("div");
+  meta.className = "alert-meta";
+  const fields = [
+    ["Vehicle", vehicleName ? `${a.vehicle_id} · ${vehicleName}` : a.vehicle_id],
+    ["Created", new Date(a.created_at).toLocaleString()],
+    ["Source", a.source || "–"],
+    ["Alert ID", a.alert_id, "mono"],
+  ];
+  for (const [label, value, cls] of fields) {
+    const item = document.createElement("div");
+    const k = document.createElement("div");
+    k.className = "k";
+    k.textContent = label;
+    const v = document.createElement("div");
+    if (cls) v.className = cls;
+    v.textContent = value;
+    item.append(k, v);
+    meta.append(item);
+  }
+  card.append(meta);
+
+  const desc = document.createElement("div");
+  desc.className = a.description ? "alert-card-desc" : "alert-card-desc muted";
+  desc.textContent = a.description || "No description provided.";
+  card.append(desc);
+
+  return card;
+}
+
+function showAlertModal(title, subtitle, manageHref) {
+  const modal = $("alert-modal");
+  $("alert-modal-title").textContent = title;
+  $("alert-modal-sub").textContent = subtitle;
+  $("alert-modal-manage").href = manageHref;
+  const body = $("alert-modal-body");
+  body.replaceChildren();
+  const loading = document.createElement("p");
+  loading.className = "muted";
+  loading.style.margin = "0";
+  loading.textContent = "Loading alert details…";
+  body.append(loading);
+  if (!modal.open) modal.showModal();
+  return body;
+}
+
+async function openVehicleAlerts(vehicleId, vehicleName) {
+  const manageHref = `/alerts?tenant=${encodeURIComponent(state.tenant)}&vehicle=${encodeURIComponent(vehicleId)}`;
+  const body = showAlertModal(`Active alerts · ${vehicleId}`, vehicleName || "", manageHref);
+  try {
+    const q = new URLSearchParams({
+      vehicle_id: vehicleId,
+      active_only: "true",
+      limit: "50",
+    });
+    const { alerts } = await api(`/api/v1/alerts?${q}`);
+    body.replaceChildren();
+    if (!alerts.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.style.margin = "0";
+      empty.textContent = "No active alerts for this vehicle.";
+      body.append(empty);
+      return;
+    }
+    for (const a of alerts) {
+      body.append(buildAlertCard(a, vehicleName));
+    }
+  } catch (err) {
+    body.replaceChildren();
+    const msg = document.createElement("p");
+    msg.className = "feedback error";
+    msg.style.margin = "0";
+    msg.textContent = `Could not load alerts: ${err.message}`;
+    body.append(msg);
+  }
+}
+
+async function openAlertDetail(alertId, vehicleName) {
+  const manageHref = `/alerts?tenant=${encodeURIComponent(state.tenant)}&alert=${encodeURIComponent(alertId)}`;
+  const body = showAlertModal("Alert details", "", manageHref);
+  try {
+    const alert = await api(`/api/v1/alerts/${encodeURIComponent(alertId)}`);
+    const resolvedName = vehicleName || state.vehicleNames.get(alert.vehicle_id) || "";
+    $("alert-modal-title").textContent = alert.alert_type;
+    $("alert-modal-sub").textContent = resolvedName
+      ? `${alert.vehicle_id} · ${resolvedName}`
+      : alert.vehicle_id;
+    body.replaceChildren(buildAlertCard(alert, resolvedName));
+  } catch (err) {
+    body.replaceChildren();
+    const msg = document.createElement("p");
+    msg.className = "feedback error";
+    msg.style.margin = "0";
+    msg.textContent = `Could not load alert details: ${err.message}`;
+    body.append(msg);
+  }
+}
+
+async function refreshTenantData() {
+  try {
+    const [{ vehicles }, { alerts }] = await Promise.all([
+      api("/api/v1/vehicles"),
+      api("/api/v1/alerts?limit=20"),
+    ]);
+    state.vehicleNames = new Map(vehicles.map((v) => [v.vehicle_id, v.name]));
+    renderVehicleOptions(vehicles);
+    renderVehicleCounts(vehicles);
+    renderRecentAlerts(alerts);
+    $("error").hidden = true;
+    $("refreshed").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+  } catch (err) {
+    $("error").textContent = `Could not reach the API: ${err.message}`;
+    $("error").hidden = false;
+  }
+}
+
+function showFeedback(kind, message, alertObj = null) {
+  const box = $("feedback");
+  box.className = `feedback ${kind}`;
+  box.replaceChildren();
+  const text = document.createElement("span");
+  text.textContent = message;
+  box.append(text);
+  if (alertObj) {
+    box.append(document.createTextNode(" "));
+    const link = document.createElement("a");
+    link.href = `/alerts?tenant=${encodeURIComponent(state.tenant)}&alert=${encodeURIComponent(alertObj.alert_id)}`;
+    link.textContent = "View in Alert Management";
+    box.append(link);
+  }
+  box.hidden = false;
+}
+
+$("alert-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("generate-btn");
+  const vehicleId = $("vehicle").value;
+  const alertType = $("alert-type").value;
+  const severity = $("severity").value;
+  const description = $("description").value.trim();
+
+  if (!vehicleId || !alertType || !severity) {
+    showFeedback("error", "Please select a vehicle, alert type, and severity.");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Generating…";
+  try {
+    const created = await api("/api/v1/alerts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vehicle_id: vehicleId,
+        alert_type: alertType,
+        severity,
+        description: description || null,
+      }),
+    });
+    $("description").value = "";
+    const ts = new Date(created.created_at).toLocaleTimeString();
+    showFeedback(
+      "success",
+      `Alert created for ${created.vehicle_id}: ${created.alert_type} (${created.severity}) at ${ts}.`,
+      created,
+    );
+    await refreshTenantData();
+  } catch (err) {
+    showFeedback("error", `Failed to generate alert: ${err.message}`);
+  } finally {
+    btn.textContent = "Generate Alert";
+    updateSubmitState();
+  }
+});
+
+$("alert-modal-close").addEventListener("click", () => $("alert-modal").close());
+$("alert-modal").addEventListener("click", (e) => {
+  if (e.target === $("alert-modal")) $("alert-modal").close();
+});
+window.addEventListener("focus", () => {
+  if (state.catalogLoaded && !$("alert-modal").open) refreshTenantData();
+});
+
+$("tenant").addEventListener("change", async (e) => {
+  state.tenant = e.target.value;
+  if ($("alert-modal").open) $("alert-modal").close();
+  $("feedback").hidden = true;
+  syncNavLinks();
+  await refreshTenantData();
+});
+
+(async function init() {
+  syncNavLinks();
+  try {
+    await loadCatalog();
+    await refreshTenantData();
+  } catch (err) {
+    $("error").textContent = `Could not initialize simulator: ${err.message}`;
+    $("error").hidden = false;
+  }
+})();
+</script>
+</body>
+</html>

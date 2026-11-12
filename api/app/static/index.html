@@ -30,6 +30,10 @@
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 16px 24px; background: var(--panel); border-bottom: 1px solid var(--line); }
   header h1 { margin: 0; font-size: 19px; }
   header .sub { color: var(--muted); font-size: 13px; }
+  .nav { display: flex; gap: 8px; }
+  .nav a { text-decoration: none; font-size: 13px; font-weight: 600; padding: 5px 11px; border-radius: 6px; border: 1px solid var(--line); color: var(--text); }
+  .nav a:hover { background: var(--row-hover); }
+  .nav a.active { background: var(--row-selected); border-color: var(--accent); color: var(--accent); }
   label { font-size: 14px; color: var(--muted); }
   select { margin-left: 6px; font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
   .refresh { margin-left: auto; color: var(--muted); font-size: 13px; }
@@ -79,6 +83,47 @@
   .chip.ACKED { background: var(--online-bg); color: var(--online-fg); }
   .chip.REJECTED { background: var(--offline-bg); color: var(--offline-fg); }
   .chip.EXPIRED { background: var(--never-bg); color: var(--never-fg); }
+  button.alert-count {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 26px;
+    padding: 2px 9px; border: 1px solid transparent; border-radius: 999px;
+    font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+    background: var(--offline-bg); color: var(--offline-fg); cursor: pointer;
+  }
+  button.alert-count:hover { filter: brightness(0.95); border-color: var(--offline-fg); }
+  button.btn-secondary {
+    font: inherit; font-size: 13px; font-weight: 600; padding: 5px 11px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer;
+  }
+  button.btn-secondary:hover { background: var(--row-hover); }
+  button.alert-link {
+    font: inherit; font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 6px;
+    border: 1px solid var(--line); background: transparent; color: var(--accent); cursor: pointer; margin-left: auto;
+  }
+  button.alert-link:hover { background: var(--row-hover); }
+  dialog.alert-modal {
+    width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px);
+    padding: 0; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--panel); color: var(--text); box-shadow: 0 20px 50px rgba(0, 0, 0, .28);
+  }
+  dialog.alert-modal::backdrop { background: rgba(15, 20, 30, .55); }
+  .alert-modal-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    padding: 16px 18px; border-bottom: 1px solid var(--line);
+  }
+  .alert-modal-body { padding: 16px 18px; overflow-y: auto; max-height: 65vh; display: grid; gap: 12px; }
+  .alert-modal-foot {
+    padding: 12px 18px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end;
+  }
+  .alert-modal-foot a { color: var(--accent); font-size: 13px; font-weight: 600; text-decoration: none; }
+  .alert-modal-foot a:hover { text-decoration: underline; }
+  .alert-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; }
+  .alert-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .alert-card-title { font-weight: 700; font-size: 15px; }
+  .cat-tag { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--never-bg); color: var(--never-fg); }
+  .status-tag { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--online-bg); color: var(--online-fg); }
+  .alert-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; font-size: 13px; }
+  .alert-meta .k { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .alert-desc { font-size: 14px; padding-top: 6px; border-top: 1px solid var(--line); }
   footer { padding: 0 24px 20px; font-size: 12px; color: var(--muted); }
 </style>
 </head>
@@ -88,6 +133,11 @@
     <h1>Fleet vehicles</h1>
     <div class="sub">AV Cloud Platform · Data and IoT Management</div>
   </div>
+  <nav class="nav" aria-label="Primary">
+    <a href="/" class="active" id="dash-link">Dashboard</a>
+    <a href="/alerts" id="alerts-link">Alert Management</a>
+    <a href="/alert-simulator" id="sim-link">Alert Simulator</a>
+  </nav>
   <label>Tenant
     <select id="tenant">
       <option value="t-acme">t-acme · Acme Logistics</option>
@@ -101,8 +151,8 @@
   <section>
     <h2>Vehicles</h2>
     <table>
-      <thead><tr><th>Vehicle</th><th>Name</th><th>Status</th><th>Last heartbeat</th></tr></thead>
-      <tbody id="vehicles"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+      <thead><tr><th>Vehicle</th><th>Name</th><th>Status</th><th>Alerts</th><th>Last heartbeat</th></tr></thead>
+      <tbody id="vehicles"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
     </table>
     <div class="legend">Online ≤30 s since last heartbeat · Stale 30–90 s · Offline &gt;90 s or after a disconnect</div>
   </section>
@@ -123,12 +173,27 @@
         <span id="command-note" class="muted" role="status"></span>
       </div>
       <ul class="events" id="commands"></ul>
+      <h3>Active alerts</h3>
+      <ul class="events" id="vehicle-alerts"><li class="muted">No active alerts.</li></ul>
       <h3>Recent events</h3>
       <ul class="events" id="events"><li class="muted">No events in the last 24 hours.</li></ul>
     </div>
     <p class="muted" id="detail-empty">Click a row to see live telemetry.</p>
   </section>
 </main>
+<dialog id="alert-modal" class="alert-modal" aria-labelledby="alert-modal-title">
+  <div class="alert-modal-head">
+    <div>
+      <h2 id="alert-modal-title" style="margin:0">Alert details</h2>
+      <div class="muted" id="alert-modal-sub" style="font-size:13px"></div>
+    </div>
+    <button type="button" class="btn-secondary" id="alert-modal-close" aria-label="Close alert details">Close</button>
+  </div>
+  <div id="alert-modal-body" class="alert-modal-body"></div>
+  <div class="alert-modal-foot">
+    <a id="alert-modal-manage" href="/alerts">Manage in Alert Management →</a>
+  </div>
+</dialog>
 <footer>Local auth stub: the tenant is sent as the X-Tenant-Id header. Refreshes every 2 seconds.</footer>
 
 <script>
@@ -156,7 +221,7 @@ if ([...$("tenant").options].some((o) => o.value === params.get("tenant"))) $("t
 const state = { tenant: $("tenant").value, selected: params.get("vehicle"), points: [], awaitingAck: null };
 
 async function api(path) {
-  const res = await fetch(path, { headers: { "X-Tenant-Id": state.tenant } });
+  const res = await fetch(path, { cache: "no-store", headers: { "X-Tenant-Id": state.tenant } });
   if (!res.ok) throw new Error(`${path.split("?")[0]} returned ${res.status}`);
   return res.json();
 }
@@ -188,7 +253,7 @@ function renderVehicles(vehicles, asOf) {
   const body = $("vehicles");
   body.replaceChildren();
   if (!vehicles.length) {
-    body.append(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="4" class="muted">No vehicles for this tenant.</td>' }));
+    body.append(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="5" class="muted">No vehicles for this tenant.</td>' }));
     return;
   }
   for (const v of vehicles) {
@@ -197,7 +262,31 @@ function renderVehicles(vehicles, asOf) {
     if (v.vehicle_id === state.selected) tr.className = "selected";
     const status = document.createElement("td");
     status.append(chip(v.status));
-    tr.append(cell(v.vehicle_id, "mono"), cell(v.name), status, cell(ago(v.last_heartbeat_at, asOf), "muted"));
+    const alerts = document.createElement("td");
+    const alertCount = Number(v.alert_count || 0);
+    if (alertCount > 0) {
+      const badge = document.createElement("button");
+      badge.type = "button";
+      badge.className = "alert-count";
+      badge.textContent = String(alertCount);
+      badge.title = "Click to view active alert details";
+      badge.setAttribute(
+        "aria-label",
+        `${alertCount} active alert${alertCount === 1 ? "" : "s"} for ${v.vehicle_id} — view details`,
+      );
+      badge.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openVehicleAlerts(v.vehicle_id, v.name);
+      });
+      badge.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+      });
+      alerts.append(badge);
+    } else {
+      alerts.className = "muted";
+      alerts.textContent = "-";
+    }
+    tr.append(cell(v.vehicle_id, "mono"), cell(v.name), status, alerts, cell(ago(v.last_heartbeat_at, asOf), "muted"));
     const pick = () => select(v.vehicle_id, v.name);
     tr.addEventListener("click", pick);
     tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
@@ -210,6 +299,7 @@ function select(vehicleId, name) {
   state.awaitingAck = null;
   $("command-note").textContent = "";
   $("commands").replaceChildren();
+  $("vehicle-alerts").replaceChildren();
   state.points = [];
   $("detail-title").textContent = `${vehicleId} · ${name}`;
   $("detail").hidden = false;
@@ -221,6 +311,7 @@ function clearSelection() {
   state.selected = null;
   state.awaitingAck = null;
   $("command-note").textContent = "";
+  $("vehicle-alerts").replaceChildren();
   state.points = [];
   $("detail-title").textContent = "Select a vehicle";
   $("detail").hidden = true;
@@ -314,6 +405,171 @@ function renderEvents(events) {
   }
 }
 
+function renderVehicleAlerts(alerts, vehicleName) {
+  const list = $("vehicle-alerts");
+  list.replaceChildren();
+  if (!alerts.length) {
+    const li = document.createElement("li");
+    li.className = "muted";
+    li.textContent = "No active alerts.";
+    list.append(li);
+    return;
+  }
+  for (const a of alerts) {
+    const li = document.createElement("li");
+    const when = document.createElement("span");
+    when.className = "when";
+    when.textContent = new Date(a.created_at).toLocaleTimeString();
+    const sev = document.createElement("span");
+    sev.className = `sev ${a.severity}`;
+    sev.textContent = a.severity;
+    const what = document.createElement("span");
+    what.textContent = `${a.alert_type} · ${a.category}`;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "alert-link";
+    btn.textContent = "Details";
+    btn.addEventListener("click", () => openAlertDetail(a.alert_id, vehicleName));
+    li.append(when, sev, what, btn);
+    list.append(li);
+  }
+}
+
+const ALERT_STATUS_LABELS = {
+  ACTIVE: "Active",
+  OCCURRED: "Occurred",
+  REPORTED: "Reported",
+  OPEN: "Open",
+  ACKNOWLEDGED: "Acknowledged",
+  DISPATCHED: "Dispatched",
+  RESOLVED: "Resolved",
+  FALSE_ALARM: "False Alarm",
+};
+
+function buildAlertCard(a, vehicleName) {
+  const card = document.createElement("article");
+  card.className = "alert-card";
+
+  const top = document.createElement("div");
+  top.className = "alert-card-top";
+  const title = document.createElement("span");
+  title.className = "alert-card-title";
+  title.textContent = a.alert_type;
+  const cat = document.createElement("span");
+  cat.className = "cat-tag";
+  cat.textContent = a.category;
+  const sev = document.createElement("span");
+  sev.className = `sev ${a.severity}`;
+  sev.textContent = a.severity;
+  const status = document.createElement("span");
+  status.className = "status-tag";
+  status.textContent = ALERT_STATUS_LABELS[a.status] || a.status;
+  top.append(title, cat, sev, status);
+  card.append(top);
+
+  const meta = document.createElement("div");
+  meta.className = "alert-meta";
+  const fields = [
+    ["Vehicle", vehicleName ? `${a.vehicle_id} · ${vehicleName}` : a.vehicle_id],
+    ["Created", new Date(a.created_at).toLocaleString()],
+    ["Source", a.source || "–"],
+    ["Alert ID", a.alert_id, "mono"],
+  ];
+  for (const [label, value, cls] of fields) {
+    const item = document.createElement("div");
+    const k = document.createElement("div");
+    k.className = "k";
+    k.textContent = label;
+    const v = document.createElement("div");
+    if (cls) v.className = cls;
+    v.textContent = value;
+    item.append(k, v);
+    meta.append(item);
+  }
+  card.append(meta);
+
+  const desc = document.createElement("div");
+  desc.className = a.description ? "alert-desc" : "alert-desc muted";
+  desc.textContent = a.description || "No description provided.";
+  card.append(desc);
+
+  return card;
+}
+
+function showAlertModal(title, subtitle, vehicleId) {
+  const modal = $("alert-modal");
+  $("alert-modal-title").textContent = title;
+  $("alert-modal-sub").textContent = subtitle;
+  $("alert-modal-manage").href = vehicleId
+    ? `/alerts?tenant=${encodeURIComponent(state.tenant)}&vehicle=${encodeURIComponent(vehicleId)}`
+    : `/alerts?tenant=${encodeURIComponent(state.tenant)}`;
+  const body = $("alert-modal-body");
+  body.replaceChildren();
+  const loading = document.createElement("p");
+  loading.className = "muted";
+  loading.style.margin = "0";
+  loading.textContent = "Loading alert details…";
+  body.append(loading);
+  if (!modal.open) modal.showModal();
+  return body;
+}
+
+async function openVehicleAlerts(vehicleId, vehicleName) {
+  select(vehicleId, vehicleName);
+  const body = showAlertModal(
+    `Active alerts · ${vehicleId}`,
+    vehicleName || "",
+    vehicleId,
+  );
+  try {
+    const q = new URLSearchParams({
+      vehicle_id: vehicleId,
+      active_only: "true",
+      limit: "50",
+    });
+    const { alerts } = await api(`/api/v1/alerts?${q}`);
+    body.replaceChildren();
+    if (!alerts.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.style.margin = "0";
+      empty.textContent = "No active alerts for this vehicle.";
+      body.append(empty);
+      return;
+    }
+    for (const a of alerts) {
+      body.append(buildAlertCard(a, vehicleName));
+    }
+  } catch (err) {
+    body.replaceChildren();
+    const msg = document.createElement("p");
+    msg.className = "error";
+    msg.style.margin = "0";
+    msg.textContent = `Could not load alerts: ${err.message}`;
+    body.append(msg);
+  }
+}
+
+async function openAlertDetail(alertId, vehicleName) {
+  const body = showAlertModal("Alert details", "", state.selected);
+  try {
+    const alert = await api(`/api/v1/alerts/${encodeURIComponent(alertId)}`);
+    $("alert-modal-title").textContent = alert.alert_type;
+    $("alert-modal-sub").textContent = vehicleName
+      ? `${alert.vehicle_id} · ${vehicleName}`
+      : alert.vehicle_id;
+    $("alert-modal-manage").href = `/alerts?tenant=${encodeURIComponent(state.tenant)}&alert=${encodeURIComponent(alert.alert_id)}`;
+    body.replaceChildren(buildAlertCard(alert, vehicleName));
+  } catch (err) {
+    body.replaceChildren();
+    const msg = document.createElement("p");
+    msg.className = "error";
+    msg.style.margin = "0";
+    msg.textContent = `Could not load alert details: ${err.message}`;
+    body.append(msg);
+  }
+}
+
 function drawChart(points) {
   const canvas = $("chart");
   const ratio = window.devicePixelRatio || 1;
@@ -374,6 +630,8 @@ async function refresh() {
       renderDetail(points);
       const events = await api(`/api/v1/events?${new URLSearchParams({ vehicle_id: state.selected, limit: "5" })}`);
       renderEvents(events.events);
+      const alerts = await api(`/api/v1/alerts?${new URLSearchParams({ vehicle_id: state.selected, active_only: "true", limit: "20" })}`);
+      renderVehicleAlerts(alerts.alerts, current?.name);
       const commands = await api(`/internal/v1/vehicles/${encodeURIComponent(state.selected)}/commands?limit=3`);
       renderCommands(commands.commands);
     }
@@ -385,13 +643,27 @@ async function refresh() {
   }
 }
 
+function syncNavLinks() {
+  const q = `?tenant=${encodeURIComponent(state.tenant)}`;
+  $("dash-link").href = `/${q}`;
+  $("alerts-link").href = `/alerts${q}`;
+  $("sim-link").href = `/alert-simulator${q}`;
+}
+
+$("alert-modal-close").addEventListener("click", () => $("alert-modal").close());
+$("alert-modal").addEventListener("click", (e) => {
+  if (e.target === $("alert-modal")) $("alert-modal").close();
+});
 $("pull-over").addEventListener("click", sendPullOver);
 $("tenant").addEventListener("change", (e) => {
   state.tenant = e.target.value;
+  if ($("alert-modal").open) $("alert-modal").close();
+  syncNavLinks();
   clearSelection();
   refresh();
 });
 window.addEventListener("resize", () => state.selected && drawChart(state.points));
+syncNavLinks();
 refresh();
 setInterval(refresh, REFRESH_MS);
 </script>
