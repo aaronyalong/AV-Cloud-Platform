@@ -1,0 +1,7 @@
+{
+  "app": "node bin/app.js",
+  "context": {
+    "@aws-cdk/aws-ecs:arnFormatIncludesClusterName": true,
+    "@aws-cdk/core:target-partitions": ["aws"]
+  }
+}
