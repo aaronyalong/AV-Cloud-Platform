@@ -133,3 +133,91 @@ Every Python command takes `--env-file .env`, because that's where the database 
 ## Design documents
 
 The system design (Deliverable 1) and the Deliverable 2 requirements aren't stored in this repo. Ask the team for the latest copy.
+
+
+## IoT Device Manager local component
+
+Open **http://localhost:8000/devices**, or follow **IoT Device Manager** from
+the fleet dashboard. Start it with `make demo` in the repo root. The demo script
+sets the workspace import paths, so no manual `PYTHONPATH` export is needed.
+
+The existing `iot_device` table remains the vehicle gateway used by fleet status.
+Migration `0003` adds a separate many-sensors-per-vehicle inventory and persistent
+maintenance history, both with forced tenant row-level security. The seed adds
+one simulated microphone, camera, LiDAR, and GNSS sensor per demo vehicle.
+
+The console supports:
+- Sensor registration and inventory; IDs are unique within a tenant.
+- Validated microphone gain, sampling rate, beamforming, noise suppression,
+  camera resolution, and preferred network. Configuration writes merge into
+  desired state and increment a version; the local agent reports the matching
+  version separately. Offline devices keep changes pending until reconnect.
+- Connectivity, signal, packet loss, upload queue, storage, and uptime. Device
+  health becomes Degraded after more than 30 seconds without a heartbeat, a
+  fault, or signal below -85 dBm; Offline after more than 90 seconds or a gateway
+  disconnect. This preserves the original fleet dashboard status rules.
+- Simulated diagnostics, microphone tests, restarts, and firmware deployments.
+  Commands progress from Sent to Running to Completed, or Expired after 60
+  seconds without completion. History and simulated firmware versions persist.
+- Authenticated Wi-Fi preference above -70 dBm, cellular fallback, and buffering
+  recommendations for poor/no connectivity. Microphones use at least 44.1 kHz
+  during the simulator's collision emergency window. The audio policy reduces
+  gain by 6 dB when clipping exceeds two seconds without overwriting desired gain.
+
+### Local device API
+
+All routes below require `X-Tenant-Id` and `X-User-Role: staff` or `owner`.
+`owner` is read-only; `staff` can register, configure, and send commands.
+These are caller-controlled **demo headers**, not production authentication.
+Owner mode currently sees tenant inventory; vehicle ownership checks, Cognito
+claims, device certificates, and mTLS are still required for a deployed service.
+Existing vehicle endpoints keep their current authentication behavior.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/v1/vehicles/{vehicle_id}/devices` | Sensor inventory, health, desired/reported configuration |
+| POST | `/api/v1/vehicles/{vehicle_id}/devices` | Register a simulated sensor |
+| PUT | `/api/v1/vehicles/{vehicle_id}/config?device_id={device_id}` | Merge validated desired settings |
+| GET | `/api/v1/vehicles/{vehicle_id}/connectivity` | Connectivity and thresholds |
+| POST | `/api/v1/vehicles/{vehicle_id}/commands` | Enqueue sensor maintenance |
+| GET | `/api/v1/vehicles/{vehicle_id}/commands` | Command and deployment history |
+
+Registration example: `{"device_id":"rear-mic","device_type":"microphone","model":"Simulated rear microphone"}`.
+Configuration example: `{"sample_rate_hz":44100,"gain_db":12.0,"noise_suppression":true}`.
+Command example: `{"device_id":"rear-mic","command":"diagnostics"}`.
+Firmware example: `{"device_id":"rear-mic","command":"firmware_update","firmware_version":"demo-1.1.0"}`.
+
+### Demo walkthrough
+
+1. Run `make demo`, open `/devices`, and select `veh-07` and its microphone.
+2. Change gain or sample rate, save, and watch desired and reported versions
+   converge. Change the network preference to cellular and check the network card.
+3. Run a microphone test or diagnostics; expand its history result. Simulate a
+   firmware update to `demo-1.1.0` and check the inventory version after completion.
+4. Register another sensor and wait for its first simulated heartbeat.
+5. Switch to Owner to verify read-only controls. Switch tenants to see only that
+   fleet. IDs from other tenants return 404 from vehicle-scoped APIs.
+6. Restart with `make demo ARGS="--stop veh-09"`. After it stops sending, sensors
+   become Degraded and then Offline; config stays pending and new commands fail
+   with 409. Its last reported network values remain visible as historical data.
+
+### Integration boundaries
+
+The sensor agent in `workers.devices` runs beside the existing simulator and
+uses PostgreSQL as the local desired/reported state and command outbox. It only
+acknowledges sensors belonging to vehicles currently running in that simulator.
+There is no live MQTT broker, AWS Thing Shadow, certificate provisioning,
+hardware telemetry, audio processing, local media buffer, or firmware flashing
+in this component. Network counters and microphone test results are simulated;
+clipping/no-link decisions are covered by policy tests rather than real hardware.
+The proposed `sv/{vehicle_id}/...` topic transport must derive tenant/vehicle
+identity from verified certificates before invoking the same storage operations.
+Real firmware delivery additionally needs signed artifacts, rollback, and edge
+acknowledgments. Retirement and provisioning lifecycle endpoints in the state
+diagram remain future work; local registration creates a simulated inventory row.
+
+Tests use the separate `av_test` databases:
+
+```bash
+PYTHONPATH="$PWD/avdata/src:$PWD/api:$PWD/workers/src" uv run --env-file .env pytest -q
+```

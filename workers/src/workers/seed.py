@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from avdata.postgres import tenant_transaction
+from workers.devices import seed_sensors
 
 # tenant_id -> (tenant name, [(vehicle_id, vehicle name), ...])
 DEMO_FLEET: dict[str, tuple[str, list[tuple[str, str]]]] = {
@@ -64,6 +65,8 @@ async def seed_demo_fleet(owner_engine: AsyncEngine) -> None:
                         "thing": f"{tenant_id}-{vehicle_id}",
                     },
                 )
+
+                await seed_sensors(conn, tenant_id, vehicle_id)
 
 
 # One camera frame per demo vehicle, so download links have something to serve.

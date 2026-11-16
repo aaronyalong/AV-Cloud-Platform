@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import Settings
-from app.routes import commands, health, media, vehicles
+from app.routes import commands, devices, health, media, vehicles
 from avdata import mongo as avmongo
 from avdata.media import LocalMediaStore
 
@@ -40,6 +40,14 @@ app.include_router(health.router)
 app.include_router(vehicles.router)
 app.include_router(commands.router)
 app.include_router(media.router)
+app.include_router(devices.router)
+
+
+@app.get("/devices", include_in_schema=False)
+async def device_console() -> FileResponse:
+    """The local sensor inventory and configuration console."""
+    return FileResponse(Path(__file__).parent / "static" / "devices.html")
+
 
 INDEX_HTML = Path(__file__).parent / "static" / "index.html"
 

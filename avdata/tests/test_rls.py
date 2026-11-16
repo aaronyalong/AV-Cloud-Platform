@@ -24,6 +24,8 @@ SEEDED = {
     "vehicle": (3, 1),
     "iot_device": (2, 1),
     "vehicle_command": (2, 1),
+    "managed_sensor": (2, 1),
+    "sensor_command": (2, 1),
 }
 TABLES = list(SEEDED)
 
@@ -61,6 +63,19 @@ def seeded(migrated_db: None, pg_conninfo: Callable[[str], str]) -> None:
         conn.execute(
             "INSERT INTO vehicle_command (tenant_id, vehicle_id, command) VALUES"
             " (%(a)s, 'v1', 'SLOW_DOWN'), (%(b)s, 'v1', 'PULL_OVER')",
+            params,
+        )
+
+        conn.execute(
+            "INSERT INTO managed_sensor (tenant_id, vehicle_id, device_id, device_type, model) VALUES"
+            " (%(a)s, 'v1', 'sensor-a1', 'microphone', 'Test mic'),"
+            " (%(b)s, 'v1', 'sensor-b1', 'camera', 'Test camera')",
+            params,
+        )
+        conn.execute(
+            "INSERT INTO sensor_command (tenant_id, vehicle_id, device_id, command) VALUES"
+            " (%(a)s, 'v1', 'sensor-a1', 'diagnostics'),"
+            " (%(b)s, 'v1', 'sensor-b1', 'diagnostics')",
             params,
         )
 

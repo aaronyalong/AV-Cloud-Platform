@@ -17,6 +17,7 @@ import signal
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from avdata import mongo as avmongo
+from workers.devices import SensorAgent
 from workers.downlink import CommandDownlink
 from workers.ingest import IngestWorker
 from workers.queue import InProcessQueue
@@ -98,12 +99,17 @@ async def main() -> None:
     sim_task = asyncio.create_task(simulator.run())
     downlink = CommandDownlink(engine, simulator, list(DEMO_FLEET))
     downlink_task = asyncio.create_task(downlink.run())
+    sensor_task = asyncio.create_task(
+        SensorAgent(engine, simulator, list(DEMO_FLEET)).run()
+    )
     try:
         await stopping.wait()
     finally:
-        for task in (sim_task, downlink_task):
+        for task in (sim_task, downlink_task, sensor_task):
             task.cancel()
-        await asyncio.gather(sim_task, downlink_task, return_exceptions=True)
+        await asyncio.gather(
+            sim_task, downlink_task, sensor_task, return_exceptions=True
+        )
         await simulator.disconnect()
         await queue.drain()
         for task in (worker_task, stats_task):
